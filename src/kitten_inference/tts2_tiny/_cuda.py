@@ -56,6 +56,10 @@ def _load():
         if not _supported_system():
             raise ValueError(f"backend='cuda' runs on Linux x86-64 and Windows x64 with an NVIDIA GPU, not on "
                              f"{platform.system()} {platform.machine()}. Pass backend='cpu' to run on the CPU.")
+        if sys.version_info < (3, 9):   # the NVIDIA GPU library ships with the Kitten TTS 2 engine, Python 3.9 and newer
+            raise ValueError(f"backend='cuda' needs Python 3.9 or newer (this is Python {sys.version_info[0]}."
+                             f"{sys.version_info[1]}): the kitten-inference packages for Python 3.8 have no NVIDIA "
+                             "GPU library. Use Python 3.9 or newer, or pass backend='cpu' to run on the CPU.")
         raise ValueError(f"backend='cuda' is not available: this kitten-inference package has no NVIDIA GPU library "
                          f"({path}). Reinstall it with: pip install --force-reinstall \"kitten-inference\", or pass "
                          "backend='cpu' to run on the CPU.")

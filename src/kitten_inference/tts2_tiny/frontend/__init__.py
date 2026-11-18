@@ -49,9 +49,10 @@ def _wrap(ps):
         yield ps
 
 
-def front_end(g2p, text):
-    """text -> (phoneme chunks, G2PResult). Text of up to MAX_PHON phonemes is one G2P call."""
-    whole = g2p(text)
+def front_end(g2p, text, normalise=True):
+    """text -> (phoneme chunks, G2PResult). Text of up to MAX_PHON phonemes is one G2P call. normalise=False: the text
+    is already normalised (stream(), which normalises the whole text once before cutting it into chunks)."""
+    whole = g2p(text, normalise=normalise)
     if len(whole.phonemes) <= MAX_PHON:
         return ([whole.phonemes] if whole.phonemes else []), whole
     chunks, cur = [], ""

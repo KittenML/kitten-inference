@@ -22,6 +22,7 @@
 #endif
 
 #include "engine/model.hpp"
+#include "stream/chunker.hpp"
 #include "backend/backend.hpp"
 #include "backend/cpu/ops/work_split.hpp"
 #ifdef HAVE_METAL
@@ -456,4 +457,25 @@ PYBIND11_MODULE(_engine, m) {
                    "' input=[" + sh + "]" +
                    ">";
         });
+
+    // ── Streaming chunks (src/stream/chunker.hpp): the same code as the C library's kt08_stream ──────────────────
+    namespace ks = kitten_stream;
+    py::module_ sm = m.def_submodule("stream", "stream()'s chunking and silence trims (src/stream/chunker.hpp).");
+    sm.attr("TTS08_MAX_CHARS") = ks::kTts08MaxChars;
+    sm.attr("TINY_CHUNK_CHARS") = ks::kTinyChunkChars;
+    sm.attr("ONE_SENTENCE") = ks::kOneSentence;
+    sm.attr("TAIL_KEEP_MS") = ks::kTailKeepMs;
+    sm.def("pack_sentences", &ks::pack_sentences, py::arg("sentences"), py::arg("chunk_chars") = 0,
+           py::arg("max_chars") = 0, py::arg("punctuate_cuts") = false,
+           "Sentences to chunks: one per chunk (chunk_chars <= 0), or whole sentences packed up to chunk_chars characters.");
+    sm.def("split_sentences", &ks::split_sentences, py::arg("text"),
+           "Kitten TTS 2 mini/nano/pico's sentence split (SENT_MULTI), as the C library cuts text.");
+    sm.def("lead_trim_offset", [](py::array_t<float, py::array::c_style | py::array::forcecast> a, int sample_rate) {
+        return ks::lead_trim_offset(a.data(), (size_t)a.size(), sample_rate);
+    }, py::arg("audio"), py::arg("sample_rate") = 24000,
+       "Samples to drop from a chunk's start: the first sample at or above -50 dBFS minus 20 ms (0 if none).");
+    sm.def("tail_keep", [](py::array_t<float, py::array::c_style | py::array::forcecast> a, int sample_rate, double keep_ms) {
+        return ks::tail_keep(a.data(), (size_t)a.size(), sample_rate, keep_ms);
+    }, py::arg("audio"), py::arg("sample_rate") = 24000, py::arg("keep_ms") = ks::kTailKeepMs,
+       "Samples to keep: up to keep_ms after the last sample at or above -50 dBFS (all when there is none).");
 }

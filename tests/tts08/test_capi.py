@@ -425,7 +425,7 @@ class LibraryTests(unittest.TestCase):
         return list(buf)
 
     def test_version_and_build_info(self):
-        self.assertEqual(self.lib.kt08_api_version(), 5)  # 2: Kitten TTS 2 mini, nano and pico; 3: their NPU path; 4: text to phonemes (0.8); 5: text front end (mini, nano, pico)
+        self.assertEqual(self.lib.kt08_api_version(), 6)  # 2: Kitten TTS 2 mini, nano and pico; 3: their NPU path; 4: text to phonemes (0.8); 5: text front end (mini, nano, pico); 6: streaming
         self.assertIn(b"kitten_tts08", self.lib.kt08_build_info())
 
     def test_phoneme_ids_match_python(self):

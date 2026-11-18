@@ -1594,10 +1594,15 @@ std::string fold_extra(const std::string& s) {
 }  // namespace
 
 bool EnglishFrontend::text_to_chunks(std::string_view text, std::vector<std::string>& chunks, std::string& err) {
-    chunks.clear();
     impl_->timing = Timing{};
+    return normalized_to_chunks(tts_normalize(text), chunks, err);
+}
+
+bool EnglishFrontend::normalized_to_chunks(std::string_view normalized, std::vector<std::string>& chunks,
+                                           std::string& err) {
+    chunks.clear();
     (void)err;
-    std::string norm = tts_normalize(text);
+    const std::string norm(normalized);
     std::string whole = impl_->g2p_text(norm);
     if (cps(whole) <= MAX_PHON) {
         if (!whole.empty()) chunks.push_back(whole);

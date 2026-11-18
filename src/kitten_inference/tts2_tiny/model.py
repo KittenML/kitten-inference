@@ -47,16 +47,15 @@ LOW_MEMORY_MODE = "extreme-low-memory"
 # speed: 1.0 is normal, 2.0 twice as fast. The range keeps one chunk's audio (and memory) bounded: at speed 0.01 one
 # short sentence needs 145 s of audio and 1.2 GB. The C library (kt08_synthesize_tiny) checks the same range.
 SPEED_MIN, SPEED_MAX = 0.25, 4.0
+# stream()'s default chunk size in characters (chunk_chars=None): KittenTTS 2's own chunk_chars default (kittenml
+# kittentts2/text.py CHUNK_CHARS). The C library's kt08_stream_open uses the same for chunk_chars 0
+# (KT08_STREAM_TINY_CHUNK_CHARS).
+STREAM_CHUNK_CHARS = 380
 
 
 def check_speed(speed):
-    try:
-        value = float(speed)
-    except (TypeError, ValueError):
-        raise ValueError(f"speed must be a number from {SPEED_MIN} to {SPEED_MAX}, not {speed!r}") from None
-    if not (SPEED_MIN <= value <= SPEED_MAX):   # also refuses nan
-        raise ValueError(f"speed must be from {SPEED_MIN} to {SPEED_MAX} (1.0 is normal), not {speed!r}")
-    return value
+    from .._family import check_speed as _check   # one rule and wording for both small families
+    return _check("tts2_tiny", speed)
 # English text goes through spaCy, regex and addict, Japanese text (mini) through fugashi, jaconv and addict (the code of
 # misaki 0.9.4 and num2words 0.5.14 they use is vendored in frontend/). kitten-inference installs them on CPython 3.10 to
 # 3.14 (their markers in pyproject.toml): on Python 3.9 pip picks spaCy 3.8.17, which ships only as source and fails to
@@ -198,27 +197,20 @@ class KittenTTS2Tiny:
 
     def __init__(self, model="KittenML/kitten-tts-2-nano", backend=None, cache_dir=None, precision="fp32",
                  revision=None, low_memory=False):
-        if precision not in PRECISIONS:
-            raise ValueError(f"precision must be one of {PRECISIONS}, not {precision!r}")
-        if backend in ("rocm", "amd_gpu"):
-            raise ValueError(f"Kitten TTS 2 mini, nano and pico run on the CPU, NVIDIA GPUs and Apple silicon GPUs: "
-                             f"backend={backend!r} is not available for them yet. Leave out backend (or pass "
-                             "backend='cpu').")
-        if backend not in (None, "cpu", "metal", "cuda"):
-            raise ValueError(f"backend must be 'cpu', 'metal' or 'cuda' for Kitten TTS 2 mini, nano and pico, not "
-                             f"{backend!r}")
-        if backend in ("metal", "cuda") and precision != "fp32":
-            raise ValueError(f"backend={backend!r} runs the float32 model: leave out precision (or pass "
-                             "precision='fp32'), or use the CPU for int8")
-        if low_memory and backend in ("metal", "cuda"):
-            raise ValueError(f"low_memory=True is for the CPU: leave out backend (or pass backend='cpu'), not "
-                             f"backend={backend!r}")
+        # The same rules and messages as Kitten TTS 0.8 (kitten_inference/_family.py), before any download.
+        from .. import _family
+        backend = _family.check_backend("tts2_tiny", backend)
+        precision = _family.check_precision("tts2_tiny", precision) or "fp32"
+        _family.check_gpu_rules("tts2_tiny", backend, precision, low_memory)
         self.precision, self.cache_dir, self._backend_req = precision, cache_dir, backend
         self.low_memory = bool(low_memory)
         self._cuda = None
         if backend == "cuda":   # before any download: ValueError with the reason when there is no NVIDIA GPU or driver
             from . import _cuda
             self._cuda = _cuda.engine()
+        if backend == "metal":  # also before any download
+            from ..tts08 import cpp_model as _cm
+            _cm.check_metal()
         self.repo = repo_id(model)
         if self.repo is None:
             if not is_tiny_model(model):
@@ -252,16 +244,6 @@ class KittenTTS2Tiny:
         _cm._check_glibc()                     # espeak-ng needs glibc 2.29+; say so clearly
         self._mi = _cm._import_engine()
         self.backend = None
-        if backend == "metal":
-            try:
-                with _cm._ENGINE_GATE.use(self._mi, "metal"):
-                    pass
-            except ValueError:
-                # set_backend() fails both on a computer without a Metal GPU and in a build without the Metal
-                # backend (for example one compiled without Xcode's Metal compiler): name both.
-                raise ValueError("backend='metal' is not available: this build of kitten-inference has no Metal "
-                                 "backend, or this computer has no Metal GPU (Apple silicon Macs have one). Pass "
-                                 "backend='cpu' to run on the CPU.") from None
 
     # ---- files --------------------------------------------------------------------------------------------------
     def _fetch(self, filename):
@@ -293,11 +275,13 @@ class KittenTTS2Tiny:
                                f"v{_convert.FORMAT_VERSION}")
         p = self.precision
         arch, weights = (os.path.join(out, f"{model_key}_{p}_arch.json"), os.path.join(out, f"{model_key}_{p}.bin"))
-        done = os.path.join(out, f"{model_key}.done")
-        if not os.path.isfile(done):
+        # Only the precision asked for is converted (less time, memory and disk on first use). "<key>.done" marks a
+        # cache an earlier version wrote with both precisions.
+        done = os.path.join(out, f"{model_key}_{p}.done")
+        if not os.path.isfile(done) and not os.path.isfile(os.path.join(out, f"{model_key}.done")):
             entry = self.config["models"][model_key]
             src = self._fetch(entry["safetensors"])
-            _convert.convert_model(self.config, model_key, src, out, int8=True)
+            _convert.convert_model(self.config, model_key, src, out, int8=p == "int8", fp32=p == "fp32")
             tmp = _convert._tmp_name(done)
             with open(tmp, "w") as f:
                 f.write("ok\n")
@@ -462,10 +446,27 @@ class KittenTTS2Tiny:
             w[-f:] *= np.linspace(1, 0, f, dtype=np.float32)
         return w
 
-    def generate_stream(self, text, voice=None, language=None, speed=1.0):
-        """Yield the audio of each chunk (long text is cut at sentence ends) as it is produced. speed: 0.25 to 4."""
+    def generate_stream(self, text, voice=None, language=None, speed=1.0, trim_lead=True, chunk_chars=None):
+        """Yield the audio of each chunk as it is produced. Play the chunks with 0.15 s of silence between them, as
+        generate() does. speed: 0.25 to 4.
+        chunk_chars (default None: the model's default, 380, as KittenTTS 2): whole sentences packed into chunks of at
+        most that many characters (a longer sentence is cut at spaces). Smaller chunks give an earlier first
+        sound, larger ones fewer engine calls. The same text gives the same chunks on every machine (the C library's
+        kt08_stream runs the same chunker). Each chunk is phonemised only when it is next; a chunk of more than 350
+        phonemes is spoken in parts cut at sentence ends (then spaces), as generate() cuts long text.
+        trim_lead (default True): the first chunk starts at its first audible sample (less 20 ms), not after the
+        model's ~0.2-0.3 s of silence. Silence (never sound) is removed at chunk edges only: every chunk drops its
+        silent start the same way, and a chunk that another follows keeps 30 ms of silence after its last audible
+        sample."""
         speed = check_speed(speed)                 # before any work, also for empty text
+        from .. import _family, _stream
+        chunk_chars = _family.check_chunk_chars(chunk_chars)
+        trim = _stream.check_trim_lead(trim_lead)
         lang, key = self.resolve_voice(voice, language)
+        yield from self._stream_chunks(text, lang, key, speed, trim, chunk_chars)
+
+    def _package_chunks(self, text, lang, key, speed):
+        """generate()'s chunks: the whole text phonemised, then chunks of up to 350 phonemes."""
         with self._lock:
             chunks = self._front(text, lang)
         for i, ps in enumerate(chunks):
@@ -473,11 +474,69 @@ class KittenTTS2Tiny:
                 audio = self._chunk(lang, key, ps, float(speed), keep_start=(i == 0))
             yield audio
 
+    def stream_chunks(self, text, language=None, chunk_chars=None):
+        """The text chunks stream() speaks for this text (before phonemes), the same on every machine."""
+        from .. import _family
+        lang = self.resolve_voice(None, language)[0]
+        return self._text_chunks(text, lang, _family.check_chunk_chars(chunk_chars))[0]
+
+    def _text_chunks(self, text, lang, chunk_chars):
+        """(chunks, g2p, fold): the text normalised once (English), cut at sentence ends as the front end cuts long
+        text (SENT_MULTI), then packed by the native chunker."""
+        from .frontend import _LOCK, SENT_MULTI
+        fold = None
+        try:
+            with _LOCK:
+                g2p = self.frontend.g2p(lang)
+                norm = g2p._normalize(text or "") if hasattr(g2p, "_normalize") else (text or "")
+            if lang == "en" and self.frontend.phon == "v2":
+                from .frontend import phonemize_v2
+                fold = phonemize_v2.fold_extra
+        except ModuleNotFoundError as exc:
+            if exc.name and exc.name.split(".")[0] in FRONT_END_MODULES:
+                raise ImportError(front_end_unavailable(exc.name, lang)) from exc
+            raise
+        chunks = self._mi.stream.pack_sentences(SENT_MULTI.split(norm), chunk_chars or STREAM_CHUNK_CHARS)
+        return chunks, g2p, fold
+
+    def _stream_chunks(self, text, lang, key, speed, trim, chunk_chars):
+        from .. import _stream
+        from .frontend import _LOCK, front_end
+        st = self._mi.stream
+        chunks, g2p, fold = self._text_chunks(text, lang, chunk_chars)
+
+        def phonemize(chunk):
+            # The front end's own cut (front_end): a chunk of up to 350 phonemes is one piece; a longer one is cut at
+            # sentence ends, then at spaces, and packed up to 350, as generate() does. The text is already normalised.
+            try:
+                with self._lock, _LOCK:
+                    parts = front_end(g2p, chunk, normalise=False)[0]
+            except ModuleNotFoundError as exc:
+                if exc.name and exc.name.split(".")[0] in FRONT_END_MODULES:
+                    raise ImportError(front_end_unavailable(exc.name, lang)) from exc
+                raise
+            return [fold(p) for p in parts] if fold else parts
+
+        def synth(ph, _text, first, last):
+            # Every chunk keeps the model's start (dropping the start pad's frames, as generate()'s later chunks do,
+            # cut the first sound of some words at a stream's chunk starts), then drops its silent start to 20 ms before
+            # the first sample >= -50 dBFS, except a first chunk kept whole (trim_lead=False). A chunk that another
+            # follows keeps 30 ms of silence after its last audible sample. Same as kt08_stream in the C library.
+            with self._lock:
+                w = self._chunk(lang, key, ph, float(speed), keep_start=True)
+            if trim or not first:
+                w = w[st.lead_trim_offset(w, self.sample_rate):]
+            return w if last else w[:st.tail_keep(w, self.sample_rate)]
+
+        yield from _stream.run(chunks, phonemize, synth)
+
     def generate(self, text, voice=None, language=None, speed=1.0):
         """Synthesize `text`; float32 audio at `sample_rate` (24 kHz), with 0.15 s between chunks."""
         gap = np.zeros(int(GAP_S * self.sample_rate), dtype=np.float32)
         out = []
-        for w in self.generate_stream(text, voice, language, speed):
+        speed = check_speed(speed)
+        lang, key = self.resolve_voice(voice, language)
+        for w in self._package_chunks(text, lang, key, speed):
             out += [w, gap]
         return np.concatenate(out[:-1]) if out else np.zeros(0, dtype=np.float32)
 

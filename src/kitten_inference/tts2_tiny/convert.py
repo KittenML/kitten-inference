@@ -544,18 +544,20 @@ def voice_packs(npz_path):
 
 
 # ---- whole repository -------------------------------------------------------------------------------------------
-def convert_model(config, model_key, weights_path, out_dir, int8=True):
-    """Writes <model_key>_fp32_arch.json / _fp32.bin (and _int8_*) into out_dir. Returns their paths."""
+def convert_model(config, model_key, weights_path, out_dir, int8=True, fp32=True):
+    """Writes <model_key>_fp32_arch.json / _fp32.bin (fp32=True) and _int8_* (int8=True) into out_dir. Returns their
+    paths. The int8 files are made from the float32 ones in memory, so fp32=False still reads the float32 weights."""
     arch = config["models"][model_key]["architecture"]
     sd = load_safetensors(weights_path)
     os.makedirs(out_dir, exist_ok=True)
     out = {}
     a32 = build_arch(arch, f"{model_key}_fp32")
     w32 = extract_weights(sd, arch)
-    out["fp32_arch"] = os.path.join(out_dir, f"{model_key}_fp32_arch.json")
-    out["fp32_weights"] = os.path.join(out_dir, f"{model_key}_fp32.bin")
-    _write_json(out["fp32_arch"], a32)
-    w32.write(out["fp32_weights"])
+    if fp32:
+        out["fp32_arch"] = os.path.join(out_dir, f"{model_key}_fp32_arch.json")
+        out["fp32_weights"] = os.path.join(out_dir, f"{model_key}_fp32.bin")
+        _write_json(out["fp32_arch"], a32)
+        w32.write(out["fp32_weights"])
     if int8:
         a8 = int8_arch(a32, f"{model_key}_int8")
         out["int8_arch"] = os.path.join(out_dir, f"{model_key}_int8_arch.json")

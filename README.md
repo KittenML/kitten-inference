@@ -132,7 +132,8 @@ python -c "from kitten_inference import KittenTTS; KittenTTS('KittenML/kitten-tt
 - **Precision:** float32 by default. `KittenTTS(model, precision="int8")` (or `--precision int8`) is smaller and faster
   on most Arm64 CPUs; on x86-64 keep float32 unless you run Linux on a CPU with AVX-512 VNNI.
 - **Backend:** the CPU everywhere. On Apple Silicon Macs float32 runs on the Mac GPU by default; `backend="cpu"` keeps
-  it on the CPU. `backend="cuda"` (`--backend cuda`) runs float32 on NVIDIA GPUs (Linux x86-64, NVIDIA driver R570 or newer).
+  it on the CPU. `backend="cuda"` (`--backend cuda`) runs float32 on NVIDIA GPUs (Linux x86-64 and Windows x64, Python 3.9 or newer,
+  NVIDIA driver R570 or newer).
 - **Voices and speed:** each language has its own voices: `KittenTTS(model).list_voices(language="de")`; without
   `voice=` the language's first voice speaks. `speed=` goes from 0.25 to 4.
 - **First use** downloads the official files from Hugging Face and converts them once (a few seconds) into the cache;
@@ -159,6 +160,20 @@ for chunk in tts.stream("Streaming speech, chunk by chunk.", voice="Bruno"):
     ...
 ```
 
+**Streaming (Kitten TTS 0.8 and Kitten TTS 2 mini, nano and pico).** One option, with the same meaning everywhere:
+`chunk_chars`: `None` (0 in C) uses the model's default: one sentence per chunk for Kitten TTS 0.8, 380 characters for
+mini, nano and pico. A number N packs whole sentences into chunks of up to N characters; smaller starts sooner, larger
+finishes the whole text sooner. A sentence longer than N is cut at spaces; the defaults are KittenML's own. The same
+text and `chunk_chars` give the same chunks on every computer and on phones (the C library's `kt08_stream` runs the
+same code); nothing is measured. Each chunk becomes phonemes only when it is next, so the first chunk does not wait for
+the whole text. `stream()` removes silence at chunk edges only, never sound, so the chunks join like `generate()`'s:
+the first chunk starts 20 ms before its first sound instead of after the model's silent start (about 0.2-0.3 s for
+mini, nano and pico, 0.4 s for Kitten TTS 0.8; `trim_lead=False` keeps it), and mini, nano and pico chunks keep 30 ms
+of silence after their last sound when another chunk follows. Play mini, nano and pico chunks with 0.15 s of silence
+between them, Kitten TTS 0.8 chunks back to back, as their `generate()` does. A device slower than real time will pause
+between chunks: use a smaller model or a larger `chunk_chars` there. `generate()` and `generate_to_file()` keep their
+audio unchanged.
+
 ```python
 from kitten_inference import KittenTTS
 
@@ -172,6 +187,41 @@ with KittenTTS("KittenML/kitten-tts-2-mini") as tts:
     print(tts.list_voices(language="fr"))
     tts.generate_to_file("Bonjour, comment allez-vous ?", "bonjour.wav", language="fr")
 ```
+
+## Same behaviour on every hardware
+
+Within a model family, a program gets the same options, errors, voices, languages and chunks on every computer: Kitten
+TTS 0.8 on the CPU and the Mac GPU, and Kitten TTS 2 mini, nano and pico on the CPU, the Mac GPU and NVIDIA GPUs. The
+speed and the exact samples differ (Kitten TTS 0.8 on the Mac GPU: lengths up to 3.5%; see the table below).
+
+- **Options:** both families take `backend`, `cache_dir`, `precision` and `low_memory` when you create the model, and
+  `voice`, `speed`, `language` and `normalize` when you make speech (`revision` too for mini, nano and pico). An option
+  a model does not have raises `TypeError`; a value it cannot use raises `ValueError`. Both say what to pass instead,
+  in the same words on every computer.
+- **Checked first:** the backend, precision and memory settings are checked before anything is downloaded. For example
+  `backend="cuda"` with Kitten TTS 0.8 fails at once and names the models that do run on NVIDIA GPUs.
+- **Speed:** 1.0 is normal and 2.0 twice as fast, on every backend. Kitten TTS 2 mini, nano and pico take 0.25 to 4;
+  Kitten TTS 0.8 takes any value above 0, and nano 0.8 multiplies it by each voice's own pace, as kittenml does.
+- **Voices and languages:** the same list everywhere; names work in any case. Kitten TTS 0.8 speaks English
+  (`languages()` is `['en']`, and `language="en"` is accepted) and its default voice is Leo.
+- **Text:** the same text is cut into the same chunks and turned into the same phonemes on every backend.
+- **Streaming:** `stream()` cuts a text into the same chunks on every backend and on phones (`kt08_stream`): sentences
+  packed up to `chunk_chars` characters, or the model's default, as described above.
+
+What must differ, and why:
+
+| Setting | CPU | Mac GPU (`metal`) | NVIDIA GPU (`cuda`, mini/nano/pico) | Phones (C library) | Why |
+|---|---|---|---|---|---|
+| Backend when you leave it out | everywhere except as listed | float32 on Apple silicon | only when you ask for it | the CPU (or the NPU when the app asks) | the Mac GPU is faster for float32; on NVIDIA machines the CPU stays the default for now |
+| Precision | fp32 by default; int8 when asked (0.8: the `-int8` models) | fp32 only | fp32 only | as the app chooses | the GPU backends have no fast int8 path: int8 on a GPU raises `ValueError` |
+| `low_memory=True` | yes | no (`ValueError`) | no (`ValueError`) | the phones' default | it frees CPU working memory after each call; without a backend it picks the CPU |
+| CPU threads | Linux and Windows: one per logical CPU (Intel P+E chips: the P-cores); `OMP_NUM_THREADS` sets it | macOS: one core (its build has no OpenMP yet; setting `OMP_NUM_THREADS` warns) | - | 2 fast cores (iPhone: at most 2) | measured per platform |
+| Audio, bit for bit | the same on the same machine with 1 thread; with several threads, runs can differ in rounding | 0.8: lengths can differ from the CPU by up to 3.5%; mini/nano/pico: the CPU's length | the CPU's length, not bit-identical | the CPU's (NPU: close, not identical) | each backend has its own kernels |
+
+Phones use the C library, which takes text (its own front ends; `kt08_stream` streams it with the same chunks) or phonemes and follows the same speed rules (mini, nano and pico:
+0.25 to 4); the app picks a 0.8 voice by file name (Leo is `expr-voice-5-m`) and applies nano 0.8's voice pace itself
+([engines/lite/mobile](https://github.com/KittenML/kitten-inference/blob/main/engines/lite/mobile/README.md)).
+Kitten TTS 2 (large) runs only on NVIDIA and AMD GPUs and has its own streaming.
 
 ## Docs
 

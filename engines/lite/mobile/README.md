@@ -133,6 +133,44 @@ kt08_synthesize_tiny(model, ids, n, voice, rows, kt08_style_row_for_ids(n, rows)
 between chunks. A chunk holds at most 350 phonemes. `kt08_example` runs these models when `KT08_EXAMPLE_VOCAB` names
 the `vocab.json`.
 
+### Streaming (`kt08_stream`, header version 6)
+
+Text in, audio out chunk by chunk, with the same chunks as the Python package's `stream()` (the same code):
+
+```c
+kt08_stream_options so;
+kt08_stream_options_init(&so);   // chunk_chars 0: the model's default; trim_first_pause 1
+kt08_stream* st = NULL;
+kt08_stream_open(model, vocab, frontend, text, "en", voice, rows, 1.0f, &so, &st);   // mini, nano, pico
+// Kitten TTS 0.8: kt08_stream_open_tts08(model, phonemizer, text, voice, rows, 1.0f, &so, &st);
+int last = 0;
+while (!last) {                                      // on a worker thread
+    kt08_stream_next(st, &audio, &samples, &last);   // queue for playback at once (skip empty audio)
+    kt08_free(audio);
+}
+kt08_stream_free(st);
+```
+
+`chunk_chars`: None (0 in C) uses the model's default: one sentence per chunk for Kitten TTS 0.8, 380 characters for
+mini, nano and pico. A number N packs whole sentences into chunks of up to N characters; smaller starts sooner, larger
+finishes the whole text sooner. (A negative value is `KT08_ERR_ARGUMENT`; a sentence longer than N is cut at spaces;
+Kitten TTS 0.8 chunks hold at most 400 characters; a mini/nano/pico chunk past 350 phonemes is spoken in parts cut at
+sentence ends, then spaces; 380 is `KT08_STREAM_TINY_CHUNK_CHARS`.) The same text and `chunk_chars`
+give the same chunks on every device; nothing is measured. Each chunk becomes phonemes only
+when it is next (`frontend` from `kt08_tiny_frontend_load`, `phonemizer` from `kt08_phonemizer_load`, see below).
+Silence (never sound) is removed at chunk edges only: the first chunk starts 20 ms before its first sample at or above
+-50 dBFS (`trim_first_pause` 0 keeps its silent start); mini, nano and pico chunks are `kt08_synthesize_tiny`'s audio
+with `first_chunk` 1 and the same start trim (the start of the first word kept, only the silence before it dropped) and
+keep 30 ms of silence after their last audible sample when another chunk follows: play them with 0.15 s (3600 samples) between chunks. Kitten
+TTS 0.8 chunks are `kt08_synthesize`'s audio (the first without its silent start): play them back to back. A phone
+slower than real time will pause between chunks: use a smaller model (pico or nano rather than mini fp32 on an Oppo
+A96) or a larger `chunk_chars` there. The Kitten TTS 0.8 chunks equal the Python package's `stream(normalize=True)`
+chunks (its `stream()` does not normalise by default). The last call can return no audio (text, or a last chunk, with
+nothing to say); after an error, calling `kt08_stream_next` again retries the same chunk. `kt08_stream_chunks` lists the
+chunks' text (for logs). `kt08_example` runs it
+with `KT08_EXAMPLE_POLICY=stream` and `KT08_EXAMPLE_TEXT` (`KT08_EXAMPLE_CHUNK_CHARS=N` sets `chunk_chars`; `trim`: the
+app's chunks with the first chunk's silent start cut; `legacy`, the default: the app's chunks as given).
+
 ### Text to phonemes (mini, nano, pico)
 
 **English is built in (header version 5).** `kt08_tiny_frontend_load` and `kt08_tiny_text_to_phonemes` turn text into

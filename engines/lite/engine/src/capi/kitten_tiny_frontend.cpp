@@ -15,6 +15,7 @@
 #include "frontend/tiny_en/tiny_en.hpp"
 #include "frontend/tiny_lang_frontend.hpp"
 #include "kitten_tts08.h"
+#include "stream/chunker.hpp"
 
 struct kt08_tiny_frontend {
     std::string phonemizer;
@@ -40,6 +41,61 @@ bool has_long_run(const char* s) {
     return false;
 }
 }  // namespace
+
+namespace kt08_internal {
+namespace {
+kt08_status check_language(kt08_tiny_frontend* fe, const std::string& language) {
+    if (language == "en" ? !fe->en : !fe->other)
+        return set_error(KT08_ERR_UNSUPPORTED, language == "en" ? std::string("English needs g2p_dir at kt08_tiny_frontend_load")
+                                                                : "language " + language + " needs espeak_data_dir at kt08_tiny_frontend_load");
+    if (language != "en" && !kt_fe::TinyLangFrontend::supported(language, fe->phonemizer == "v1" ? 1 : 2))
+        return set_error(KT08_ERR_UNSUPPORTED, "language not supported by this build: " + language);
+    return KT08_OK;
+}
+}  // namespace
+
+// As the Python package's stream() (tts2_tiny/model.py): English text normalised once, then cut at sentence ends
+// (SENT_MULTI); other languages are cut as given.
+kt08_status tiny_sentences(kt08_tiny_frontend* fe, const char* text_utf8, const std::string& language,
+                           std::vector<std::string>& out) {
+    out.clear();
+    kt08_status st = check_language(fe, language);
+    if (st != KT08_OK) return st;
+    if (has_long_run(text_utf8))
+        return set_error(KT08_ERR_TOO_LONG, "text has more than 1000 characters without a space; split it or remove that part");
+    try {
+        std::lock_guard<std::mutex> lock(fe->mu);
+        out = kitten_stream::split_sentences(language == "en" ? fe->en->normalize(text_utf8) : std::string(text_utf8));
+        return KT08_OK;
+    } catch (const std::bad_alloc&) {
+        return set_error(KT08_ERR_MEMORY, "out of memory");
+    } catch (const std::exception& e) {
+        return set_error(KT08_ERR_RUNTIME, e.what());
+    }
+}
+
+// One chunk of those sentences to phoneme pieces, as the front end cuts any text (the package's front_end): up to 350
+// phonemes is one piece; a longer chunk is cut at sentence ends, then at spaces, and packed up to 350. English text is
+// already normalised (then the v2 (mini) fold).
+kt08_status tiny_chunk_phonemes(kt08_tiny_frontend* fe, const std::string& chunk, const std::string& language,
+                                std::vector<std::string>& out) {
+    out.clear();
+    kt08_status st = check_language(fe, language);
+    if (st != KT08_OK) return st;
+    try {
+        std::lock_guard<std::mutex> lock(fe->mu);
+        std::string err;
+        if (language == "en")
+            return fe->en->normalized_to_chunks(chunk, out, err) ? KT08_OK : set_error(KT08_ERR_RUNTIME, err);
+        const int rc = fe->other->text_to_chunks(chunk, language, out, err);
+        return rc == 0 ? KT08_OK : set_error(static_cast<kt08_status>(rc), err);
+    } catch (const std::bad_alloc&) {
+        return set_error(KT08_ERR_MEMORY, "out of memory");
+    } catch (const std::exception& e) {
+        return set_error(KT08_ERR_RUNTIME, e.what());
+    }
+}
+}  // namespace kt08_internal
 
 extern "C" {
 

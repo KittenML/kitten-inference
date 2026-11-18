@@ -681,6 +681,7 @@ if(KITTEN_BUILD_PYTHON_MODULE AND Python3_FOUND AND Python3_Development.Module_F
         # non-PIC engine OBJECT library used by the main executables.
         pybind11_add_module(_engine
             python/bindings.cpp
+            src/stream/chunker.cpp
             ${OPS_SOURCES}
             src/engine/model.cpp
             src/engine/arch_loader.cpp
@@ -799,6 +800,8 @@ if(KITTEN_BUILD_C_LIBRARY)
         src/capi/kitten_tiny_frontend.cpp
         $<TARGET_OBJECTS:kitten_tiny_en>
         $<TARGET_OBJECTS:kitten_tiny_lang>
+        src/capi/kitten_stream.cpp
+        src/stream/chunker.cpp
         ${OPS_SOURCES}
         src/engine/model.cpp
         src/engine/arch_loader.cpp

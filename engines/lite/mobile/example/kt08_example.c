@@ -23,6 +23,16 @@
  * for languages other than English (fetch_phonemizer_data.sh).
  * KT08_EXAMPLE_IDS=1 also prints each line's token ids. KT08_EXAMPLE_REPEAT=N runs every line N more times
  * (timing only; the first pass is the one written). KT08_EXAMPLE_PIN=N pins to the N fastest cores first.
+ * Streaming: KT08_EXAMPLE_POLICY=legacy (default: each line one chunk, as above), trim (the same chunks, line 0 without
+ * its silent start, cut by this program with kt08_stream's rule: 20 ms before the first sample at or above -50 dBFS)
+ * or stream (kt08_stream_open, or kt08_stream_open_tts08 without KT08_EXAMPLE_VOCAB: needs KT08_EXAMPLE_TEXT; the whole
+ * input file is one text, its lines joined with spaces; the library cuts it into chunks, phonemises each when it is
+ * next and writes OUT_DIR/NNN.wav per chunk it returns; KT08_EXAMPLE_CHUNK_CHARS=N sets kt08_stream_options.chunk_chars).
+ * Every policy prints READY lines (time since the request started when each chunk was returned) and a REQUEST line:
+ * first audible sound (the first chunk's return time plus its first sample at or above -50 dBFS, as a player starting
+ * at once would play it; text -> phonemes is included for stream and excluded for legacy and trim, whose text is
+ * phonemised before the request starts) and the playback stalls of a player that plays each chunk when it arrives with
+ * 0.15 s between chunks.
  * Qualcomm NPU (Kitten TTS 2 mini/nano/pico, library built with the QNN SDK): KT08_EXAMPLE_NPU=DIR, the folder
  * prepare_npu.py wrote for this phone's chip; WEIGHTS.bin must then be the fp32 weights. Chunks longer than the NPU
  * graphs run on the CPU model. KT08_EXAMPLE_QNN_LIBS=DIR: where Qualcomm's libraries are (default: library path).
@@ -95,6 +105,29 @@ static FILE* scratch_file(const char* dir) {
     return f;
 }
 
+/* Playback of a player that starts each chunk when it is returned, with 0.15 s between chunks (READY / REQUEST). */
+typedef struct {
+    double t_start, play_end, first_audible_ms;
+    int chunks, stalls;
+    double stall_ms;
+} playback;
+
+static void playback_chunk(playback* p, const float* x, size_t n, double t_ready) {
+    const double t = t_ready - p->t_start;
+    printf("READY idx=%d t_ms=%.1f samples=%zu\n", p->chunks, t * 1e3, n);
+    if (p->chunks == 0) {
+        size_t i = 0;
+        while (i < n && !(x[i] >= 0.0031622776f || x[i] <= -0.0031622776f)) ++i;  /* -50 dBFS */
+        p->first_audible_ms = (t + (double)i / KT08_SAMPLE_RATE) * 1e3;
+        p->play_end = t + (double)n / KT08_SAMPLE_RATE;
+    } else {
+        const double due = p->play_end + 0.15;
+        if (t > due) { ++p->stalls; p->stall_ms += (t - due) * 1e3; }
+        p->play_end = (t > due ? t : due) + (double)n / KT08_SAMPLE_RATE;
+    }
+    ++p->chunks;
+}
+
 /* CPU time this process has used so far, in seconds (all threads, user + system). */
 static double cpu_seconds(void) {
     struct rusage u;
@@ -121,6 +154,14 @@ int main(int argc, char** argv) {
         fprintf(stderr, "vocab: %s\n", kt08_last_error());
         return 1;
     }
+
+    const char* policy = getenv("KT08_EXAMPLE_POLICY");
+    if (!policy || !*policy) policy = "legacy";
+    if (strcmp(policy, "legacy") && strcmp(policy, "trim") && strcmp(policy, "stream")) {
+        fprintf(stderr, "KT08_EXAMPLE_POLICY must be legacy, trim or stream\n");
+        return 2;
+    }
+    const int trim_first = strcmp(policy, "legacy") != 0;  /* trim: line 0 without its silent start */
 
     if (pin && atoi(pin) > 0) printf("PIN cores=%d\n", kt08_pin_fastest_cores(atoi(pin)));
 
@@ -175,7 +216,12 @@ int main(int argc, char** argv) {
     FILE* in = fopen(argv[4], "rb");
     if (!in) { fprintf(stderr, "cannot open %s\n", argv[4]); return 1; }
     const char* text_dir = getenv("KT08_EXAMPLE_TEXT");
-    if (text_dir && *text_dir && !vocab) {
+    const int streaming = !strcmp(policy, "stream");
+    if (streaming && !(text_dir && *text_dir)) {
+        fprintf(stderr, "KT08_EXAMPLE_POLICY=stream needs KT08_EXAMPLE_TEXT (text in)\n");
+        return 2;
+    }
+    if (text_dir && *text_dir && !vocab && !streaming) {
         /* Text in: every line of the input is text, turned into "CHUNK<TAB>PHONEMES" lines by the library. */
         char rules[4096], list[4096];
         snprintf(rules, sizeof rules, "%s/en_rules", text_dir);
@@ -233,7 +279,7 @@ int main(int argc, char** argv) {
     }
     char line[8192];
     const char* text_g2p = getenv("KT08_EXAMPLE_TEXT");
-    if (text_g2p && *text_g2p && vocab) {
+    if (text_g2p && *text_g2p && vocab && !streaming) {
         /* text mode: convert every line to phoneme chunks first, then speak them as phoneme lines */
         const char* phon = getenv("KT08_EXAMPLE_PHONEMIZER");
         const char* lang = getenv("KT08_EXAMPLE_LANG");
@@ -275,7 +321,99 @@ int main(int argc, char** argv) {
     }
     int n_line = 0, failures = 0;
     double audio_s = 0, compute_s = 0;
-    while (fgets(line, sizeof line, in)) {
+    playback pb;
+    memset(&pb, 0, sizeof pb);
+    pb.t_start = now_s();
+    if (streaming) {
+        /* kt08_stream over the whole input text */
+        char* text = (char*)calloc(1, 1);
+        size_t len = 0;
+        while (text && fgets(line, sizeof line, in)) {
+            line[strcspn(line, "\r\n")] = 0;
+            const size_t k = strlen(line);
+            text = (char*)realloc(text, len + k + 2);
+            if (!text) break;
+            if (len) text[len++] = ' ';
+            memcpy(text + len, line, k + 1);
+            len += k;
+        }
+        fclose(in);
+        in = NULL;
+        if (!text) { fprintf(stderr, "out of memory\n"); return 1; }
+        kt08_stream_options so;
+        kt08_stream_options_init(&so);
+        const char* cc = getenv("KT08_EXAMPLE_CHUNK_CHARS");
+        if (cc && *cc) so.chunk_chars = atoi(cc);
+        kt08_phonemizer* ph = NULL;
+        kt08_tiny_frontend* fe = NULL;
+        const char* lang = getenv("KT08_EXAMPLE_LANG");
+        if (vocab) {
+            const char* phon = getenv("KT08_EXAMPLE_PHONEMIZER");
+            const char* espeak_dir = getenv("KT08_EXAMPLE_ESPEAK");
+            if (kt08_tiny_frontend_load(phon && *phon ? phon : "v1", vocab_path, text_dir,
+                                       espeak_dir && *espeak_dir ? espeak_dir : NULL, &fe) != KT08_OK) {
+                fprintf(stderr, "front end: %s\n", kt08_last_error());
+                return 1;
+            }
+        } else {
+            char rules[4096], list[4096];
+            snprintf(rules, sizeof rules, "%s/en_rules", text_dir);
+            snprintf(list, sizeof list, "%s/en_list", text_dir);
+            if (kt08_phonemizer_load(rules, list, &ph) != KT08_OK) {
+                fprintf(stderr, "phonemizer: %s\n", kt08_last_error());
+                return 1;
+            }
+        }
+        kt08_stream* st = NULL;
+        pb.t_start = now_s();
+        const kt08_status so_st =
+            vocab ? kt08_stream_open(model, vocab, fe, text, lang && *lang ? lang : "en", voice, rows, speed, &so, &st)
+                  : kt08_stream_open_tts08(model, ph, text, voice, rows, speed, &so, &st);
+        if (so_st != KT08_OK) {
+            fprintf(stderr, "stream: %s\n", kt08_last_error());
+            return 1;
+        }
+        char* plan = NULL;
+        if (kt08_stream_chunks(st, &plan) == KT08_OK) {
+            int k = 0;
+            for (char* c = plan; *plan && c; ++k) {
+                char* nl = strchr(c, '\n');
+                if (nl) *nl = 0;
+                printf("PLAN idx=%d chars=%zu text=%s\n", k, strlen(c), c);
+                c = nl ? nl + 1 : NULL;
+            }
+            kt08_free(plan);
+        }
+        int last = 0;
+        while (!last) {
+            float* audio = NULL;
+            size_t samples = 0;
+            const double t = now_s();
+            if (kt08_stream_next(st, &audio, &samples, &last) != KT08_OK) {
+                fprintf(stderr, "chunk %d: %s\n", n_line, kt08_last_error());
+                ++failures;
+                break;
+            }
+            if (!audio) break;  /* nothing (more) to say */
+            const double t1 = now_s();
+            playback_chunk(&pb, audio, samples, t1);
+            const double sec = (double)samples / KT08_SAMPLE_RATE;
+            printf("CHUNK pass=0 idx=%d samples=%zu ms=%.1f rtf=%.4f\n", n_line, samples, (t1 - t) * 1e3,
+                   sec > 0 ? (t1 - t) / sec : 0.0);
+            char path[4096];
+            snprintf(path, sizeof path, "%s/%03d.wav", argv[5], n_line);
+            if (write_wav(path, audio, samples) != 0) { fprintf(stderr, "cannot write %s\n", path); ++failures; }
+            audio_s += sec;
+            compute_s += t1 - t;
+            kt08_free(audio);
+            ++n_line;
+        }
+        kt08_stream_free(st);
+        if (fe) kt08_tiny_frontend_free(fe);
+        if (ph) kt08_phonemizer_free(ph);
+        free(text);
+    }
+    while (in && fgets(line, sizeof line, in)) {
         line[strcspn(line, "\r\n")] = 0;
         char* phonemes = line;
         char* tab = strchr(line, '\t');
@@ -306,6 +444,13 @@ int main(int argc, char** argv) {
                                  : vocab ? kt08_synthesize_tiny(model, ids, n_ids, voice, rows, style_row, speed,
                                                                 n_line == 0, &audio, &samples)
                                          : kt08_synthesize(model, ids, n_ids, voice, rows, style_row, speed, &audio, &samples);
+            if (st == KT08_OK && n_line == 0 && trim_first) {
+                /* trim policy: drop the silent start as kt08_stream does for a stream's first chunk */
+                size_t i = 0;
+                while (i < samples && !(audio[i] >= 0.0031622776f || audio[i] <= -0.0031622776f)) ++i;
+                const size_t off = i < samples && i > 480 ? i - 480 : 0;
+                if (off) { memmove(audio, audio + off, (samples - off) * sizeof(float)); samples -= off; }
+            }
             const double dt = now_s() - t;
             if (st != KT08_OK) {
                 fprintf(stderr, "line %d: %s\n", n_line, kt08_last_error());
@@ -316,6 +461,7 @@ int main(int argc, char** argv) {
             printf("CHUNK pass=%d idx=%d tokens=%zu samples=%zu ms=%.1f rtf=%.4f npu=%d\n", pass, n_line, n_ids, samples,
                    dt * 1e3, sec > 0 ? dt / sec : 0.0, on_npu);
             if (pass == 0) {
+                playback_chunk(&pb, audio, samples, t + dt);
                 char path[4096];
                 snprintf(path, sizeof path, "%s/%03d.wav", argv[5], n_line);
                 if (write_wav(path, audio, samples) != 0) { fprintf(stderr, "cannot write %s\n", path); ++failures; }
@@ -327,7 +473,9 @@ int main(int argc, char** argv) {
         free(ids);
         ++n_line;
     }
-    fclose(in);
+    if (in) fclose(in);
+    printf("REQUEST policy=%s chunks=%d first_audible_ms=%.1f stalls=%d stall_ms=%.1f\n", policy, pb.chunks,
+           pb.first_audible_ms, pb.stalls, pb.stall_ms);
     printf("DONE lines=%d failures=%d audio_s=%.2f compute_s=%.2f rtf=%.4f rss_peak_kb=%ld cpu_s=%.2f\n", n_line, failures,
            audio_s, compute_s, audio_s > 0 ? compute_s / audio_s : 0.0, peak_rss_kb(), cpu_seconds());
     kt08_free(voice);

@@ -38,6 +38,8 @@ public:
 
     // The package's Frontend(text, "en")[0]: phoneme chunks of at most 350 symbols each.
     bool text_to_chunks(std::string_view text_utf8, std::vector<std::string>& chunks, std::string& err);
+    // The same for text that is already normalised (kt08_stream, as the package's stream(): front_end(normalise=False)).
+    bool normalized_to_chunks(std::string_view normalized_utf8, std::vector<std::string>& chunks, std::string& err);
 
     // ---- diagnostics (tests and the parity tools) ----
     std::string normalize(std::string_view text_utf8);

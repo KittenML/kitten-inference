@@ -42,37 +42,38 @@ def main(argv=None):
     texts.add_argument('--text-file', type=Path)
     cpu.add_argument('--voice')
     cpu.add_argument('--output', type=Path)
+    # The same options for Kitten TTS 0.8 and Kitten TTS 2 mini, nano and pico; a setting a model cannot use is
+    # refused with the same message as in Python (kitten_inference/_family.py), not by argparse.
     # backend 'cuda': Kitten TTS 2 mini, nano and pico on NVIDIA GPUs (Linux x86-64, Windows x64)
-    cpu.add_argument('--backend', choices=['cpu', 'metal', 'cuda'] if family == 'tts2_tiny' else ['cpu', 'metal'])
+    cpu.add_argument('--backend', choices=['cpu', 'metal', 'cuda'])
     cpu.add_argument('--cache-dir')
     cpu.add_argument('--speed', type=float, default=1.0,
                      help='1.0 is normal; Kitten TTS 2 mini, nano and pico take 0.25 to 4' if family == 'tts2_tiny' else None)
-    if family != 'tts2_tiny':  # Kitten TTS 2 mini, nano and pico always normalise with their own front end
-        cpu.add_argument('--normalize', choices=['true', 'false'], default='true')
+    # Kitten TTS 2 mini, nano and pico always normalise with their own front end (--normalize false is refused)
+    cpu.add_argument('--normalize', choices=['true', 'false'], default='true')
     cpu.add_argument('--list-voices', action='store_true')
-    if family == 'tts2_tiny':  # Kitten TTS 2 mini, nano and pico
-        cpu.add_argument('--language', help='language code (default: the model\'s default, en)')
-        cpu.add_argument('--precision', choices=['fp32', 'int8'], default='fp32')
-        cpu.add_argument('--low-memory', action='store_true', help='least memory, slower (CPU only)')
+    cpu.add_argument('--language', help='language code (default: the model\'s default, en)')
+    cpu.add_argument('--precision', choices=['fp32', 'int8'],
+                     help='default: fp32 (TTS 0.8: the model name\'s, e.g. kitten-tts-mini-0.8-int8 is int8)')
+    cpu.add_argument('--low-memory', action='store_true', help='least memory, slower (CPU only)')
     opts = cpu.parse_args(rest)
     if not opts.list_voices and (opts.text is None and opts.text_file is None or opts.output is None):
         cpu.error('synthesis requires --text or --text-file, and --output')
     try:
         tiny = family == 'tts2_tiny'
-        model_options = {'precision': opts.precision, 'low_memory': opts.low_memory} if tiny else {}
+        model_options = {'low_memory': opts.low_memory}
+        if opts.precision is not None:
+            model_options['precision'] = opts.precision
         with KittenTTS(args.model, backend=opts.backend, cache_dir=opts.cache_dir, **model_options) as tts:
             if opts.list_voices:
                 if tiny and opts.language is None:   # one line per language: several languages share voice names
                     print('\n'.join(f"{lang}: {', '.join(tts.list_voices(lang))}" for lang in tts.languages()))
                 else:
-                    print('\n'.join(tts.list_voices(opts.language) if tiny else tts.list_voices()))
+                    print('\n'.join(tts.list_voices(opts.language)))
             else:
                 text = opts.text if opts.text is not None else opts.text_file.read_text(encoding='utf-8')
-                if tiny:  # the model's own front end normalises English text
-                    tts.generate_to_file(text, opts.output, voice=opts.voice, speed=opts.speed, language=opts.language)
-                else:
-                    tts.generate_to_file(text, opts.output, voice=opts.voice, speed=opts.speed,
-                                         normalize=opts.normalize == 'true')
+                tts.generate_to_file(text, opts.output, voice=opts.voice, speed=opts.speed, language=opts.language,
+                                     normalize=opts.normalize == 'true')
     except (ValueError, RuntimeError, ImportError, OSError) as exc:
         print(f'kitten-tts: {exc}', file=sys.stderr)
         return 1

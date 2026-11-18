@@ -1,4 +1,4 @@
-"""The C library's Kitten TTS 2 mini/nano/pico functions (kt08_vocab_*, kt08_synthesize_tiny).
+"""The C library's Kitten TTS 2 mini/nano/pico functions (kt08_vocab_*, kt08_synthesize_tiny, kt08_stream_*).
 
 Source-only checks always run. The library checks need a shared build of the C library (see tests/tts08/test_capi.py):
     KITTEN_TTS08_CAPI_LIB=build/capi/libkitten_tts08.so python -m pytest tests/tts2_tiny/test_capi_tiny.py
@@ -20,13 +20,15 @@ ROOT = Path(__file__).resolve().parents[2]
 HEADER = ROOT / "engines" / "lite" / "engine" / "include" / "kitten_tts08.h"
 LIB = os.environ.get("KITTEN_TTS08_CAPI_LIB")
 REPO = os.environ.get("KITTEN_TTS2_TINY_REPO")
-NEW = ("kt08_vocab_load", "kt08_vocab_free", "kt08_vocab_ids", "kt08_style_row_for_ids", "kt08_synthesize_tiny")
+NEW = ("kt08_vocab_load", "kt08_vocab_free", "kt08_vocab_ids", "kt08_style_row_for_ids", "kt08_synthesize_tiny",
+       "kt08_stream_options_init", "kt08_stream_open", "kt08_stream_next", "kt08_stream_chunks", "kt08_stream_free",
+       "kt08_stream_open_tts08")
 
 
 class HeaderTest(unittest.TestCase):
     def test_declares_tiny_functions(self):
         h = HEADER.read_text()
-        self.assertIn("#define KT08_API_VERSION 5", h)
+        self.assertIn("#define KT08_API_VERSION 6", h)   # 6: streaming
         for name in NEW:
             self.assertIn(name + "(", h)
 
@@ -64,7 +66,7 @@ class VocabTest(unittest.TestCase):
     def test_ids_match_python(self):
         from kitten_inference.tts2_tiny.model import END_TOKEN
         lib = _lib()
-        self.assertEqual(lib.kt08_api_version(), 5)
+        self.assertEqual(lib.kt08_api_version(), 6)
         vocab = {";": 1, ",": 3, " ": 16, "a": 43, "b": 44, "ə": 83, "ˈ": 156, "ʃ": 131, "…": 10}
         with tempfile.TemporaryDirectory() as d:
             p = os.path.join(d, "vocab.json")

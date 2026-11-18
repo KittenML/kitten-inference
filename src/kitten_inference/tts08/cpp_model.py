@@ -120,18 +120,8 @@ STYLE_DIM = 256
 END_TOKEN = 10
 TAIL_TRIM_SAMPLES = 5000
 
-# Lead trim for the first chunk of a stream (see generate_stream and engine/lead_trim.hpp).
-LEAD_TRIM_DBFS = -50.0
-LEAD_TRIM_PREROLL_MS = 20.0
-
-
-def lead_trim_offset(audio, sample_rate=24000, dbfs=LEAD_TRIM_DBFS, preroll_ms=LEAD_TRIM_PREROLL_MS):
-    """Samples to drop from a stream's first chunk: first |x| >= dbfs, minus preroll_ms; 0 if no sample reaches it."""
-    a = np.asarray(audio)
-    hit = np.flatnonzero(np.abs(a) >= 10.0 ** (dbfs / 20.0))
-    if hit.size == 0:
-        return 0
-    return max(0, int(hit[0]) - int(round(preroll_ms * 1e-3 * sample_rate)))
+# low_memory=True: the C library's KT08_MEMORY_EXTREME_LOW (the phones' default), as Kitten TTS 2 mini/nano/pico use.
+LOW_MEMORY_MODE = "extreme-low-memory"
 DEFAULT_VOICE = "expr-voice-5-m"
 DEFAULT_NATIVE_VOICE = "expr-voice-2-f"
 
@@ -349,6 +339,7 @@ def _set_up_cpu(engine):
         if _cpu_setup_done:
             return
         _cpu_setup_done = True
+        _warn_if_threads_ignored(engine)
         perf_threads = _hybrid.performance_threads()
         if not perf_threads:
             return
@@ -357,6 +348,38 @@ def _set_up_cpu(engine):
         threads = _hybrid.default_threads(perf_threads)
         if threads and hasattr(engine, "set_default_threads"):
             engine.set_default_threads(threads)
+
+
+def _warn_if_threads_ignored(engine):
+    """A build without OpenMP (today's macOS packages) runs on one CPU thread and ignores OMP_NUM_THREADS: say so
+    once, rather than run slower than asked without a word."""
+    requested = os.environ.get("OMP_NUM_THREADS", "").split(",")[0].strip()
+    try:
+        requested = int(requested)
+    except ValueError:
+        return
+    max_threads = getattr(engine, "max_threads", None)
+    # With OpenMP, max_threads() is OMP_NUM_THREADS here (before any default is set); without it, always 1.
+    if requested > 1 and max_threads is not None and max_threads() == 1:
+        import warnings
+        warnings.warn(f"OMP_NUM_THREADS={requested} has no effect: this build of the native engine (Kitten TTS 0.8 "
+                      "and Kitten TTS 2 mini, nano and pico) has no OpenMP and runs on one CPU thread. Today's macOS "
+                      "packages are built this way.", RuntimeWarning, stacklevel=3)
+
+
+def check_metal():
+    """ValueError unless backend='metal' can run here (Kitten TTS 0.8 and Kitten TTS 2 mini, nano and pico: one
+    message, before any download)."""
+    engine = _import_engine()
+    try:
+        with _ENGINE_GATE.use(engine, "metal"):
+            pass
+    except ValueError:
+        # set_backend() fails both on a computer without a Metal GPU and in a build without the Metal backend (for
+        # example one compiled without Xcode's Metal compiler): name both.
+        raise ValueError("backend='metal' is not available: this build of kitten-inference has no Metal backend, or "
+                         "this computer has no Metal GPU (Apple silicon Macs have one). Pass backend='cpu' to run on "
+                         "the CPU.") from None
 
 
 def _import_engine():
@@ -479,6 +502,17 @@ def _coerce_voice_pack(values):
     return pack.reshape(-1, STYLE_DIM)
 
 
+def _ids_from_phonemes(text_cleaner, phonemes):
+    """espeak phonemes -> the model's token ids (0, symbols, END_TOKEN, 0), as the reference ONNX path."""
+    phonemes = basic_english_tokenize(phonemes)
+    phonemes = " ".join(phonemes)
+    tokens = text_cleaner(phonemes)
+    tokens.insert(0, 0)
+    tokens.append(END_TOKEN)
+    tokens.append(0)
+    return np.asarray(tokens, dtype=np.float32)
+
+
 def _load_voice_bin(path):
     return _coerce_voice_pack(np.fromfile(path, dtype=np.float32))
 
@@ -495,8 +529,12 @@ class KittenTTS_1_Cpp:
         backend=None,
         style_index="token_count",
         sample_rate=SAMPLE_RATE,
+        precision=None,
+        low_memory=False,
     ):
-        """Initialize KittenTTS with the native engine."""
+        """Initialize KittenTTS with the native engine. precision: None (the graph's own) or the precision the graph
+        must have ("fp32"/"int8"). low_memory=True: the least memory, on the CPU (the C library's
+        KT08_MEMORY_EXTREME_LOW, as Kitten TTS 2 mini/nano/pico's low_memory)."""
         _check_glibc()  # before espeak-ng is loaded below, so an old glibc fails with a clear message
         self.arch_path = arch_path
         self.weights_path = weights_path
@@ -534,13 +572,19 @@ class KittenTTS_1_Cpp:
             if target in self.available_voices
         ] or self.available_voices
 
+        from .. import _family
+        backend = _family.check_backend("tts08", backend)
+        graph_precision = "int8" if _has_int8_layers(arch_path) else "fp32"
+        if precision is not None and precision != graph_precision:
+            raise ValueError(f"precision={precision!r}, but this model is the {graph_precision} model")
+        _family.check_gpu_rules("tts08", backend, graph_precision, low_memory)
+        self.precision, self.low_memory = graph_precision, bool(low_memory)
         self._mi = _import_engine()
-        if backend == "amd_gpu":
-            raise ValueError("The native engine does not support backend='amd_gpu'.")
-        self.backend = backend or _default_backend(self._mi, arch_path)
+        self.backend = backend or ("cpu" if low_memory else _default_backend(self._mi, arch_path))
         # The engine allocates and uploads the weights for the backend that is set while the model loads.
         with _ENGINE_GATE.use(self._mi, self.backend):
-            self.session = self._mi.InferenceModel(arch_path, weights_path)
+            self.session = (self._mi.InferenceModel(arch_path, weights_path, LOW_MEMORY_MODE) if low_memory
+                            else self._mi.InferenceModel(arch_path, weights_path))
 
     def _load_voices(self, voices_path, voice_paths):
         if voices_path:
@@ -559,6 +603,10 @@ class KittenTTS_1_Cpp:
         return names
 
     def _resolve_voice(self, voice):
+        if voice not in self.voice_aliases and voice not in self.available_voices:
+            # Any case, as Kitten TTS 2 mini/nano/pico: 'bella' is Bella.
+            want = str(voice).casefold()
+            voice = next((n for n in list(self.voice_aliases) + self.available_voices if n.casefold() == want), voice)
         voice = self.voice_aliases.get(voice, voice)
         if voice not in self.available_voices:
             choices = sorted(set(self.all_voice_names) | set(self.available_voices))
@@ -566,14 +614,10 @@ class KittenTTS_1_Cpp:
         return voice
 
     def _phoneme_ids(self, text):
-        phonemes_list = self.phonemizer.phonemize([text])
-        phonemes = basic_english_tokenize(phonemes_list[0])
-        phonemes = " ".join(phonemes)
-        tokens = self.text_cleaner(phonemes)
-        tokens.insert(0, 0)
-        tokens.append(END_TOKEN)
-        tokens.append(0)
-        return np.asarray(tokens, dtype=np.float32)
+        return _ids_from_phonemes(self.text_cleaner, self.phonemizer.phonemize([text])[0])
+
+    def _ids_from_phonemes(self, phonemes):
+        return _ids_from_phonemes(self.text_cleaner, phonemes)
 
     def _style_row(self, text, n_ids, rows):
         if rows <= 0:
@@ -628,23 +672,72 @@ class KittenTTS_1_Cpp:
             return np.asarray([], dtype=np.float32)
         return np.concatenate(out_chunks, axis=-1)
 
-    def generate_stream(self, text, voice=DEFAULT_VOICE, speed=1.0, clean_text=True, trim_lead=False):
-        """Yield one float32 array per sentence chunk.
+    def generate_stream(self, text, voice=DEFAULT_VOICE, speed=1.0, clean_text=True, trim_lead=True, chunk_chars=None):
+        """Yield one float32 array per chunk, as it is produced; play them back to back.
 
-        trim_lead=True drops the first chunk's inaudible lead (exact zeros and noise under -50 dBFS, ~0.37-0.45 s),
-        keeping a 20 ms pre-roll, so speech starts sooner. Every kept sample is unchanged (the stream is an exact
-        suffix of the untrimmed one); later chunks keep their lead, which is the pause between sentences. Same rule
-        as the C++ helper engine/lead_trim.hpp. An all-silent first chunk is passed through unchanged.
+        chunk_chars (default None, the model's default): one sentence per chunk, as generate(); N: whole sentences
+        packed into chunks of at most N characters (at most 400; a longer sentence is cut at spaces, each part ending
+        with a comma as the package's chunk_text does). The same text gives the same chunks on every machine (the C
+        library's kt08_stream runs the same chunker).
+        trim_lead (default True): drop the first chunk's inaudible lead (exact zeros and noise under -50 dBFS,
+        about 0.4 s), keeping a 20 ms pre-roll, so speech starts sooner. Every kept sample is unchanged; later chunks
+        keep their lead, which is the pause between sentences. With chunk_chars=None the stream's audio is generate()'s,
+        chunk by chunk, apart from that trim.
         """
+        from .. import _family, _stream
+        chunk_chars = _family.check_chunk_chars(chunk_chars)
+        trim = _stream.check_trim_lead(trim_lead)
         if clean_text:
             text = self.preprocessor(text)
-        first = trim_lead
-        for text_chunk in chunk_text(text):
-            audio = self.generate_single_chunk(text_chunk, voice, speed)
-            if first:
-                first = False
-                audio = audio[lead_trim_offset(audio):]
-            yield audio
+        sentences = chunk_text(text)
+        st = self._mi.stream
+        voice = self._resolve_voice(voice)
+        chunks = st.pack_sentences(sentences, chunk_chars or st.ONE_SENTENCE, st.TTS08_MAX_CHARS, True)
+
+        def phonemize(chunk):
+            with self._lock:
+                ph = self.phonemizer.phonemize([chunk])[0]
+            return [ph] if ph else []
+
+        def synth(ph, chunk, first, _last):
+            audio = self._synth_phonemes(ph, chunk, voice, speed)   # the chunk's text picks the style row
+            if first and trim:
+                audio = audio[st.lead_trim_offset(audio, self.sample_rate):]
+            return audio
+
+        yield from _stream.run(chunks, phonemize, synth)
+
+    def stream_chunks(self, text, clean_text=True, chunk_chars=None):
+        """The text chunks stream() speaks for this text (before phonemes), the same on every machine."""
+        from .. import _family
+        chunk_chars = _family.check_chunk_chars(chunk_chars)
+        st = self._mi.stream
+        return st.pack_sentences(chunk_text(self.preprocessor(text) if clean_text else text),
+                                 chunk_chars or st.ONE_SENTENCE, st.TTS08_MAX_CHARS, True)
+
+    def _synth_phonemes(self, phonemes, text, voice, speed):
+        """generate_single_chunk with the phonemes already made (text picks the style row on text_length models)."""
+        effective_speed = self._effective_speed(voice, speed)
+        with self._lock:
+            ids = self._ids_from_phonemes(phonemes)
+            if self._max_tokens is not None and len(ids) > self._max_tokens:
+                raise ValueError(
+                    f"this text becomes {len(ids)} phoneme tokens in one chunk, more than the model's limit of "
+                    f"{self._max_tokens}. Use shorter sentences (chunks split on sentence breaks), or "
+                    "clean_text=True so numbers and symbols are normalized rather than spelled out at length."
+                )
+            style_dec, style_pred = self._style_for_voice(voice, text, len(ids))
+            with _ENGINE_GATE.use(self._mi, self.backend):
+                self._set_native_speed(effective_speed)
+                outputs = self.session.forward(
+                    {
+                        "phoneme_ids": ids,
+                        "style_dec": style_dec,
+                        "style_pred": style_pred,
+                    }
+                )
+        audio = np.asarray(outputs["t_audio"], dtype=np.float32).reshape(-1)
+        return audio[:-TAIL_TRIM_SAMPLES]
 
     def generate_single_chunk(self, text, voice=DEFAULT_VOICE, speed=1.0):
         voice = self._resolve_voice(voice)

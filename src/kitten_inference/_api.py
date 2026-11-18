@@ -26,17 +26,17 @@ class KittenTTS:
         if self.family == 'tts2':
             from .tts2 import KittenTTS2
             self._model = KittenTTS2(backend=backend, cache_dir=cache_dir, **model_options)
-        elif self.family == 'tts2_tiny':
-            unknown = set(model_options) - {'precision', 'revision', 'low_memory'}
-            if unknown:
-                raise TypeError('Kitten TTS 2 mini/nano/pico does not support: ' + ', '.join(sorted(unknown)))
+            return
+        # Kitten TTS 0.8 and Kitten TTS 2 mini/nano/pico: the same options and errors on every backend, checked
+        # before any download (kitten_inference/_family.py).
+        from . import _family
+        _family.check_model_options(self.family, model_options)
+        if self.family == 'tts2_tiny':
             from .tts2_tiny import KittenTTS2Tiny
             self._model = KittenTTS2Tiny(str(model), backend=backend, cache_dir=cache_dir, **model_options)
         else:
-            if model_options:
-                raise TypeError('TTS 0.8 does not support: ' + ', '.join(sorted(model_options)))
             from .tts08 import KittenTTS as TTS08
-            self._model = TTS08(str(model), backend=backend, cache_dir=cache_dir)
+            self._model = TTS08(str(model), backend=backend, cache_dir=cache_dir, **model_options)
 
     def _open(self):
         if self._closed:
@@ -61,16 +61,21 @@ class KittenTTS:
 
     def default_voice(self):
         m = self._open()
-        return 'expr-voice-5-m' if self.family == 'tts08' else m.default_voice
+        # TTS 0.8: Leo (the file expr-voice-5-m), as list_voices() names it.
+        return m.default_voice if self.family != 'tts08' else getattr(m, 'default_voice_name', 'expr-voice-5-m')
 
     def list_voices(self, language=None):
         m = self._open()
         if self.family == 'tts2_tiny':
             # Without a language: every voice name once (mini gives several languages the same voices).
             return list(dict.fromkeys(v['name'] for v in m.voices(language)))
+        if self.family == 'tts08':
+            from ._family import check_language, NAMES
+            check_language(NAMES['tts08'], language, ['en'])
+            return list(m.available_voices)
         if language is not None:
-            raise TypeError('language= is available for Kitten TTS 2 mini, nano and pico')
-        return m.list_voices() if self.family == 'tts2' else list(m.available_voices)
+            raise TypeError('language= is available for Kitten TTS 0.8 and Kitten TTS 2 mini, nano and pico')
+        return m.list_voices()
 
     def languages(self):
         m = self._open()
@@ -78,15 +83,22 @@ class KittenTTS:
 
     def _options(self, options, *, file=False):
         opts = dict(options)
+        if self.family == 'tts2':
+            return opts
+        # Kitten TTS 0.8 and Kitten TTS 2 mini/nano/pico accept the same synthesis options on every backend and
+        # check them before synthesis starts (also for stream(), on its first chunk), in one wording.
+        from . import _family
+        _family.check_synth_options(self.family, opts)
+        if 'speed' in opts:
+            opts['speed'] = _family.check_speed(self.family, opts['speed'])
         if self.family == 'tts08':
-            unknown = set(opts) - {'speed', 'normalize'}
-            if unknown:
-                raise TypeError('TTS 0.8 does not support: ' + ', '.join(sorted(unknown)))
+            _family.check_language(_family.NAMES['tts08'], opts.pop('language', None), ['en'])
             opts['clean_text'] = opts.pop('normalize', file)
-        elif self.family == 'tts2_tiny':
-            unknown = set(opts) - {'speed', 'language'}
-            if unknown:
-                raise TypeError('Kitten TTS 2 mini/nano/pico does not support: ' + ', '.join(sorted(unknown)))
+        else:
+            # mini/nano/pico always prepare text with their own front end (English: numbers, symbols, ...).
+            if not opts.pop('normalize', True):
+                raise ValueError('Kitten TTS 2 mini, nano and pico always normalise text with their own front end: '
+                                 'normalize=False is not available for them')
         return opts
 
     def generate(self, text, voice=None, **options):
@@ -98,7 +110,21 @@ class KittenTTS:
 
     def stream(self, text, voice=None, **options):
         m = self._open()
+        # Kitten TTS 0.8 and TTS 2 mini/nano/pico: chunk_chars (N: whole sentences packed up to N characters; None, the
+        # default: the model's, as KittenML's packages: 0.8 one sentence per chunk, TTS 2 mini/nano/pico 380) and
+        # trim_lead (default True: the first chunk starts at its first audible sample), checked here in one wording.
+        stream_opts = {}
+        if self.family != 'tts2':
+            from . import _family, _stream
+            for key in ('chunk_chars', 'trim_lead'):
+                if key in options:
+                    stream_opts[key] = options.pop(key)
+            if 'chunk_chars' in stream_opts:
+                stream_opts['chunk_chars'] = _family.check_chunk_chars(stream_opts['chunk_chars'])
+            if 'trim_lead' in stream_opts:
+                _stream.check_trim_lead(stream_opts['trim_lead'])
         kwargs = self._options(options)
+        kwargs.update(stream_opts)
         if voice is not None:
             kwargs['voice'] = voice
         iterator = (m.stream if self.family == 'tts2' else m.generate_stream)(text, **kwargs)

@@ -5,7 +5,8 @@
  * The library turns phonemes into 24 kHz mono float audio. It can also turn text into those phonemes, as the Python
  * package does: English for Kitten TTS 0.8 (API version 4, kt08_phonemizer_* and kt08_text_*), and English, Spanish
  * and Italian for Kitten TTS 2 mini, nano and pico (API version 5, kt08_tiny_frontend_* and kt08_tiny_text_*). The
- * data files these read are downloaded by the app: see engines/lite/mobile/README.md.
+ * data files these read are downloaded by the app: see engines/lite/mobile/README.md. It can also speak a text chunk
+ * by chunk with the same chunks as the Python package's stream() (API version 6, kt08_stream_*).
  *
  * Thread safety: one kt08_model may be used by one thread at a time. Different models may run at the
  * same time on different threads. Loading is serialised inside the library.
@@ -36,10 +37,11 @@ extern "C" {
 #endif
 
 /* Version of this header. The library reports its own with kt08_api_version(). */
-#define KT08_API_VERSION 5  /* 2: Kitten TTS 2 mini, nano and pico (kt08_vocab_*, kt08_synthesize_tiny);
+#define KT08_API_VERSION 6  /* 2: Kitten TTS 2 mini, nano and pico (kt08_vocab_*, kt08_synthesize_tiny);
                                * 3: optional Qualcomm NPU path for them (kt08_npu_*);
                                * 4: English text to phonemes for Kitten TTS 0.8 (kt08_phonemizer_*, kt08_text_*);
-                               * 5: text front end for Kitten TTS 2 mini, nano and pico (kt08_tiny_frontend_*) */
+                               * 5: text front end for Kitten TTS 2 mini, nano and pico (kt08_tiny_frontend_*);
+                               * 6: streaming (kt08_stream_*) */
 
 /* Output sample rate in Hz. */
 #define KT08_SAMPLE_RATE 24000
@@ -308,6 +310,64 @@ KT08_API kt08_status kt08_chunk_to_phonemes(kt08_phonemizer* phonemizer, const c
  * in the order of kt08_text_chunks. */
 KT08_API kt08_status kt08_text_to_phonemes(kt08_phonemizer* phonemizer, const char* text_utf8, char* out,
                                            size_t capacity, size_t* out_size);
+
+/* ---- Streaming for Kitten TTS 2 mini, nano and pico, and Kitten TTS 0.8 (API version 6) --------------------------
+ * Speaks a text chunk by chunk, with the chunks of the Python package's stream() (the same code).
+ * chunk_chars: None (0 in C) uses the model's default: one sentence per chunk for Kitten TTS 0.8, 380 characters for
+ * mini, nano and pico. A number N packs whole sentences into chunks of up to N characters; smaller starts sooner,
+ * larger finishes the whole text sooner. A sentence longer than N is cut at spaces. The defaults are KittenML's own
+ * packages' (KT08_STREAM_TINY_CHUNK_CHARS for mini, nano and pico). The same text and chunk_chars give the same chunks
+ * on every device: nothing is measured. Each chunk's text becomes phonemes only when that chunk is next, so the first
+ * chunk does not wait for the whole text. A Kitten TTS 2 chunk of more than 350 phonemes (the model's limit) is spoken
+ * in parts cut at sentence ends, then at spaces, as the front end cuts long text; Kitten TTS 0.8 chunks hold at most
+ * 400 characters.
+ * Silence (never sound) is removed at chunk edges only, so the chunks join like the package's generate(): the first
+ * chunk starts 20 ms before its first sample at or above -50 dBFS (trim_first_pause). Kitten TTS 2 mini/nano/pico:
+ * every chunk is kt08_synthesize_tiny's first_chunk 1 audio with that same start trim (except a first chunk kept
+ * whole), and a chunk that another follows ends 30 ms after its last sample at or above -50 dBFS; play 0.15 s of
+ * silence (3600 samples) between chunks. Kitten TTS 0.8: later chunks are kt08_synthesize's audio unchanged; play them
+ * back to back. A device slower than real time will pause between chunks: use a smaller model or a larger chunk_chars.
+ * Use: kt08_stream_open (or kt08_stream_open_tts08), then kt08_stream_next from a worker thread until *out_last is 1,
+ * queueing each chunk for playback as soon as it is returned; then kt08_stream_free. Same thread rules as kt08_model.
+ * After an error from kt08_stream_next, calling it again retries the same chunk. */
+typedef struct kt08_stream kt08_stream;
+
+#define KT08_STREAM_TINY_CHUNK_CHARS 380     /* chunk_chars 0 for Kitten TTS 2 mini/nano/pico (KittenTTS 2's default) */
+
+typedef struct kt08_stream_options {
+    uint32_t struct_size;       /* sizeof(kt08_stream_options), set by kt08_stream_options_init */
+    int32_t chunk_chars;        /* 0 (default): the model's default (see above). N > 0: whole sentences packed into
+                                 * chunks of at most N characters (Kitten TTS 0.8: at most 400). Negative:
+                                 * KT08_ERR_ARGUMENT */
+    int32_t trim_first_pause;   /* 1 (default): the first chunk without its silent start. 0: keep it */
+} kt08_stream_options;
+
+KT08_API void kt08_stream_options_init(kt08_stream_options* options);
+
+/* Kitten TTS 2 mini, nano and pico: text_utf8 in language ("en", or another code the front end supports), through
+ * frontend (kt08_tiny_frontend_load) and vocab. English is normalised as the package does. model, vocab, frontend and
+ * voice must stay valid until kt08_stream_free; options may be NULL. */
+KT08_API kt08_status kt08_stream_open(kt08_model* model, const kt08_vocab* vocab, kt08_tiny_frontend* frontend,
+                                      const char* text_utf8, const char* language, const float* voice,
+                                      size_t voice_rows, float speed, const kt08_stream_options* options,
+                                      kt08_stream** out);
+
+/* Kitten TTS 0.8: text_utf8 (English) normalised and cut into sentences as kt08_text_chunks does, then phonemised
+ * chunk by chunk with phonemizer (kt08_phonemizer_load); each chunk's voice style row as kt08_style_row_for_text. The
+ * chunks are the Python package's stream() chunks with normalize=True (its stream() does not normalise by default). */
+KT08_API kt08_status kt08_stream_open_tts08(kt08_model* model, kt08_phonemizer* phonemizer, const char* text_utf8,
+                                            const float* voice, size_t voice_rows, float speed,
+                                            const kt08_stream_options* options, kt08_stream** out);
+
+/* Synthesises the next chunk (free *out_audio with kt08_free). *out_last (may be NULL) is 1 when no chunk follows;
+ * after that the call returns KT08_OK with no audio. A call can return no audio with *out_last 1 also when the text, or
+ * its last chunk, has nothing to say: skip empty audio. */
+KT08_API kt08_status kt08_stream_next(kt08_stream* stream, float** out_audio, size_t* out_samples, int* out_last);
+
+/* The stream's text chunks, joined with '\n' (free with kt08_free), for logs and tests. */
+KT08_API kt08_status kt08_stream_chunks(const kt08_stream* stream, char** out_chunks);
+
+KT08_API void kt08_stream_free(kt08_stream* stream);
 
 #ifdef __cplusplus
 }
