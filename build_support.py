@@ -34,14 +34,17 @@ def hooks(part):
                 project.pop('scripts', None)
                 shutil.copytree(ROOT / 'src/kitten_inference' / part, target / part)
             if part == 'tts08':
-                shutil.copy2(ROOT / 'engines/tts08/NOTICE', stage / 'NOTICE')
-                shutil.copytree(ROOT / 'engines/tts08/licenses', stage / 'licenses')
+                # Kitten TTS 2 mini/nano/pico run on this engine, so their Python package ships with it.
+                shutil.copytree(ROOT / 'src/kitten_inference/tts2_tiny', target / 'tts2_tiny')
+                shutil.copy2(ROOT / 'engines/lite/NOTICE', stage / 'NOTICE')
+                shutil.copytree(ROOT / 'engines/lite/licenses', stage / 'licenses')
                 project['license-files'] = ['LICENSE', 'NOTICE', 'licenses/*.txt']
-                shutil.copytree(ROOT / 'engines/tts08/engine', stage / 'engine')
+                shutil.copytree(ROOT / 'engines/lite/engine', stage / 'engine')
                 config['tool'] = {'scikit-build': dict(config['tool']['scikit-build'])}
                 opts = config['tool']['scikit-build']
                 opts['cmake']['source-dir'] = 'engine'
-                opts['wheel']['packages'] = {'kitten_inference/tts08': 'kitten_inference/tts08'}
+                opts['wheel']['packages'] = {'kitten_inference/tts08': 'kitten_inference/tts08',
+                                             'kitten_inference/tts2_tiny': 'kitten_inference/tts2_tiny'}
                 from scikit_build_core import build as backend
             else:
                 if part == 'tts2':

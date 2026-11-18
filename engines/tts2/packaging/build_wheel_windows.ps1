@@ -10,7 +10,8 @@
 param(
   [string]$Out = "",
   [int]$Jobs = 0,
-  [string]$Version = ""   # default: the engine version (make_wheel.py)
+  [string]$Version = "",  # default: the engine version (make_wheel.py)
+  [string]$ExtraLib = ""  # kt08_cuda.dll (engines\tts08\cuda-library\build_windows.ps1), added to lib/
 )
 $ErrorActionPreference = "Stop"
 $Src = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
@@ -50,6 +51,7 @@ if (Test-Path $Stage) { Remove-Item -Recurse -Force $Stage }
 Run "cmake" @("--install", "build/wheel-windows", "--prefix", $Stage)
 $makeArgs = @("packaging/make_wheel.py", "--stage", $Stage, "--plat", "win_amd64", "--out", $Out)
 if ($Version) { $makeArgs += @("--version", $Version) }
+if ($ExtraLib) { $makeArgs += @("--extra-lib", $ExtraLib) }
 Run "python" $makeArgs
 
 # Imports: Windows system DLLs only.

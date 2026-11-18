@@ -14,7 +14,7 @@ on the committed tree only (never on uncommitted changes).
 verify-inputs: every file the lock names is in IN, with the locked sha256 and size.
 build: one kitten-inference wheel per TTS 0.8 input W, into OUT, plus OUT/assembly-report.json:
   - W's kitten_inference/tts08/** and kitten_inference_tts08.libs/**, except the lock's tts08_python_overlay files,
-    which come from engines/tts08/ at HEAD; the umbrella's kitten_inference/__init__.py; the tts2 wheel's
+    which come from engines/lite/ at HEAD; the umbrella's kitten_inference/__init__.py; the tts2 wheel's
     kitten_inference/tts2/**; and on CPython 3.9 or newer the engines: CUDA and ROCm for a manylinux_2_28_x86_64 W
     (whose wheel then carries only that tag), CUDA for win_amd64. A copied member keeps its compressed bytes, date,
     mode and RECORD row.
@@ -65,7 +65,7 @@ ENGINE_PARTS = {"cuda-linux": ("kitten-inference-tts2-cu12", "cuda"),
 # What an engine payload supplies; its licenses/ folder is left out (the dist-info licence set covers it).
 ENGINE_FILE = re.compile(r"kitten_inference/_tts2_(cuda|rocm)/(__init__\.py|bin/[^/]+|lib/[^/]+)")
 ENGINE_LICENCES = re.compile(r"kitten_inference/_tts2_(cuda|rocm)/licenses/.+")
-TTS08_PREFIXES = ("kitten_inference/tts08/", "kitten_inference_tts08.libs/")
+TTS08_PREFIXES = ("kitten_inference/tts08/", "kitten_inference/tts2_tiny/", "kitten_inference_tts08.libs/")
 TTS2_PREFIX = "kitten_inference/tts2/"
 UMBRELLA_FILE = "kitten_inference/__init__.py"
 # The sources each tested build was made from, recorded by lock_inputs.py at the build's commit (lock source_trees):
@@ -73,14 +73,16 @@ UMBRELLA_FILE = "kitten_inference/__init__.py"
 # overlay files, so that only those may differ at the release commit.
 TTS2_SOURCES = ("engines/tts2/src", "engines/tts2/include", "engines/tts2/cli", "engines/tts2/CMakeLists.txt", "engines/tts2/cmake",
                 "engines/tts2/CMakePresets.json")
-ENGINE_SOURCES = {"tts08": ("engines/tts08/engine", "engines/tts08/CMakeLists.txt"), "cuda": TTS2_SOURCES, "rocm": TTS2_SOURCES}
+# The CUDA payload also carries the Kitten TTS 2 mini/nano/pico NVIDIA GPU library, built from the TTS 0.8 engine.
+ENGINE_SOURCES = {"tts08": ("engines/lite/engine", "engines/lite/CMakeLists.txt"),
+                  "cuda": TTS2_SOURCES + ("engines/lite/engine", "engines/lite/cuda-library"), "rocm": TTS2_SOURCES}
 TTS08_PYTHON = "src/kitten_inference/tts08"
 # The packaged paths whose git trees the GPU tests and the test-PyPI run used (lock tested_packaged_trees).
 TESTED_TREE_PATHS = ("pyproject.toml", "build_support.py", "src/kitten_inference", "umbrella", "engines/tts2/python", "engines/tts2/tools/kt2n_assets", "src/kitten_inference/tts08", "NOTICE",
-                     "LICENSE", "engines/tts08/NOTICE", "engines/tts08/licenses", "engines/tts2/NOTICE", "engines/tts2/licenses")
+                     "LICENSE", "engines/lite/NOTICE", "engines/lite/licenses", "engines/tts2/NOTICE", "engines/tts2/licenses")
 # Licence files: dist-info/licenses/<path> from <path> in the source, so each NOTICE's "licenses/" stays true.
-LICENCE_FILES = ("LICENSE", "NOTICE", "engines/tts08/NOTICE", "engines/tts2/NOTICE")
-LICENCE_DIRS = ("engines/tts08/licenses", "engines/tts2/licenses")
+LICENCE_FILES = ("LICENSE", "NOTICE", "engines/lite/NOTICE", "engines/tts2/NOTICE", "src/kitten_inference/tts2_tiny/frontend/NOTICE")
+LICENCE_DIRS = ("engines/lite/licenses", "engines/tts2/licenses")
 LGPL_SOURCE = {"engines/tts2/licenses/lgpl-source/atempo.cc": "engines/tts2/src/post/atempo.cc",
                "engines/tts2/licenses/lgpl-source/atempo.h": "engines/tts2/include/kt2n/post/atempo.h"}
 # Members written here get hatchling's fixed date, so building twice from one tree gives the same bytes.
@@ -467,7 +469,8 @@ def licences(src: Source) -> dict:
         if target in out:
             refuse(f"{target} is in the source and would also be copied from {path}")
         out[target] = src.read(path)
-    return {p.replace("engines/tts08/", "tts-0.8/").replace("engines/tts2/", "tts-2/"): value for p, value in out.items()}
+    return {p.replace("engines/lite/", "tts-0.8/").replace("engines/tts2/", "tts-2/")
+                .replace("src/kitten_inference/tts2_tiny/frontend/", "tts-2-tiny/"): value for p, value in out.items()}
 
 
 def with_licence_files(metadata: bytes, names) -> bytes:

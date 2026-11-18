@@ -119,6 +119,19 @@ STYLE_DIM = 256
 # 5000 samples of every chunk. Both are copied here so the two paths give the same audio length.
 END_TOKEN = 10
 TAIL_TRIM_SAMPLES = 5000
+
+# Lead trim for the first chunk of a stream (see generate_stream and engine/lead_trim.hpp).
+LEAD_TRIM_DBFS = -50.0
+LEAD_TRIM_PREROLL_MS = 20.0
+
+
+def lead_trim_offset(audio, sample_rate=24000, dbfs=LEAD_TRIM_DBFS, preroll_ms=LEAD_TRIM_PREROLL_MS):
+    """Samples to drop from a stream's first chunk: first |x| >= dbfs, minus preroll_ms; 0 if no sample reaches it."""
+    a = np.asarray(audio)
+    hit = np.flatnonzero(np.abs(a) >= 10.0 ** (dbfs / 20.0))
+    if hit.size == 0:
+        return 0
+    return max(0, int(hit[0]) - int(round(preroll_ms * 1e-3 * sample_rate)))
 DEFAULT_VOICE = "expr-voice-5-m"
 DEFAULT_NATIVE_VOICE = "expr-voice-2-f"
 
@@ -201,7 +214,8 @@ def _check_glibc(version=None):
     if v is not None and v < GLIBC_FLOOR:
         raise RuntimeError(
             f"This system's glibc is {v[0]}.{v[1]}, older than the {GLIBC_FLOOR[0]}.{GLIBC_FLOOR[1]} that "
-            "Kitten TTS 0.8 needs (the espeak-ng library it uses for text). On glibc older than 2.29 "
+            "Kitten TTS 0.8 and Kitten TTS 2 mini, nano and pico need (the espeak-ng library they use for text). "
+            "On glibc older than 2.29 "
             "(for example RHEL/Rocky 8, Debian 10, Ubuntu 18.04 or Amazon Linux 2) it would otherwise fail with "
             "\"espeak not installed on your system\". Use a Linux with glibc 2.29 or newer."
         )
@@ -317,8 +331,8 @@ def _check_cpu(requirements=None, features=None):
         hint = next((_CPU_HINT[f] for f in lacking if f in _CPU_HINT), "")
         raise RuntimeError(
             f"This CPU does not have {' and '.join(_CPU_FEATURES.get(f, f) for f in lacking)}, which the native "
-            f"engine of Kitten TTS 0.8 is built for{f' ({hint})' if hint else ''}. Loading it would stop "
-            f"Python with \"Illegal instruction\". If this check is wrong, set {SKIP_CPU_CHECK}=1."
+            f"engine of Kitten TTS 0.8 and Kitten TTS 2 mini, nano and pico is built for{f' ({hint})' if hint else ''}. "
+            f"Loading it would stop Python with \"Illegal instruction\". If this check is wrong, set {SKIP_CPU_CHECK}=1."
         )
 
 
@@ -614,11 +628,23 @@ class KittenTTS_1_Cpp:
             return np.asarray([], dtype=np.float32)
         return np.concatenate(out_chunks, axis=-1)
 
-    def generate_stream(self, text, voice=DEFAULT_VOICE, speed=1.0, clean_text=True):
+    def generate_stream(self, text, voice=DEFAULT_VOICE, speed=1.0, clean_text=True, trim_lead=False):
+        """Yield one float32 array per sentence chunk.
+
+        trim_lead=True drops the first chunk's inaudible lead (exact zeros and noise under -50 dBFS, ~0.37-0.45 s),
+        keeping a 20 ms pre-roll, so speech starts sooner. Every kept sample is unchanged (the stream is an exact
+        suffix of the untrimmed one); later chunks keep their lead, which is the pause between sentences. Same rule
+        as the C++ helper engine/lead_trim.hpp. An all-silent first chunk is passed through unchanged.
+        """
         if clean_text:
             text = self.preprocessor(text)
+        first = trim_lead
         for text_chunk in chunk_text(text):
-            yield self.generate_single_chunk(text_chunk, voice, speed)
+            audio = self.generate_single_chunk(text_chunk, voice, speed)
+            if first:
+                first = False
+                audio = audio[lead_trim_offset(audio):]
+            yield audio
 
     def generate_single_chunk(self, text, voice=DEFAULT_VOICE, speed=1.0):
         voice = self._resolve_voice(voice)

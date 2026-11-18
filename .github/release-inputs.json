@@ -82,8 +82,8 @@
   ],
   "source_trees": {
     "tts08": {
-      "engines/tts08/engine": "fa2ba4ee3854d29b0be33627b7e883158b376334",
-      "engines/tts08/CMakeLists.txt": null,
+      "engines/lite/engine": "fa2ba4ee3854d29b0be33627b7e883158b376334",
+      "engines/lite/CMakeLists.txt": null,
       "src/kitten_inference/tts08/__init__.py": "b79220af3612c6cf54d7c152fc3e589a53466931",
       "src/kitten_inference/tts08/_hybrid.py": "03f547b9a074efd5416fbc4b275e4ca241fd7da1",
       "src/kitten_inference/tts08/model_defs/kitten_fp32_15m_arch.json": "657b8079dbe420a12a71b73407f0056676949171",

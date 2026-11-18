@@ -15,7 +15,7 @@ from pathlib import Path
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument('--family', choices=['tts08', 'tts2'], required=True)
+    p.add_argument('--family', choices=['tts08', 'tts2', 'tts2_tiny'], required=True)
     p.add_argument('--project', default='kitten-inference')
     p.add_argument('--version', required=True)
     p.add_argument('--out', type=Path, required=True)
@@ -23,10 +23,12 @@ def main():
     if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]*', args.project) or not re.fullmatch(r'\d+(?:\.\d+)+(?:\.post\d+)?', args.version):
         p.error('invalid candidate package or version')
     source = Path(__file__).resolve().parents[1] / 'README.md'
-    heading = '### Kitten TTS 0.8: the CPU' if args.family == 'tts08' else '### Kitten TTS 2: NVIDIA and AMD GPUs'
+    heading = {'tts08': '### Kitten TTS 0.8: the CPU', 'tts2': '### Kitten TTS 2: NVIDIA and AMD GPUs',
+               'tts2_tiny': '### Kitten TTS 2 mini, nano and pico: the CPU'}[args.family]
     section = source.read_text(encoding='utf-8').split(heading, 1)[1]
     block = re.search(r'```sh\n(.*?)\n```', section, re.S).group(1)
-    block = block.replace('pip install "kitten-inference"', 'pip install "' + args.project + '==' + args.version + '"')
+    # the documented requirement, with or without a minimum version (pip install kitten-inference)
+    block = re.sub(r'pip install "?kitten-inference(?:>=[0-9.]+)?"?(?=\s|$)', lambda m: 'pip install "' + args.project + '==' + args.version + '"', block)
     args.out.mkdir(parents=True, exist_ok=True)
     folder = args.out.resolve()
     windows = sys.platform == 'win32'

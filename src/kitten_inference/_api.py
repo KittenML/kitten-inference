@@ -8,6 +8,11 @@ def model_family(model):
     name = str(model).rstrip('/').lower()
     if name in ('kittenml/kitten-tts-2', 'kitten-tts-2'):
         return 'tts2'
+    # Kitten TTS 2 mini, nano and pico are small StyleTTS2-style models: they run on the TTS 0.8 graph engine
+    # on the CPU (Metal on Apple silicon; CUDA with backend='cuda', a build of that engine), not on the TTS 2 GPU engine.
+    from .tts2_tiny.model import is_tiny_model
+    if is_tiny_model(model):
+        return 'tts2_tiny'
     # The 0.8 loader validates local and remote configurations.
     return 'tts08'
 
@@ -21,6 +26,12 @@ class KittenTTS:
         if self.family == 'tts2':
             from .tts2 import KittenTTS2
             self._model = KittenTTS2(backend=backend, cache_dir=cache_dir, **model_options)
+        elif self.family == 'tts2_tiny':
+            unknown = set(model_options) - {'precision', 'revision', 'low_memory'}
+            if unknown:
+                raise TypeError('Kitten TTS 2 mini/nano/pico does not support: ' + ', '.join(sorted(unknown)))
+            from .tts2_tiny import KittenTTS2Tiny
+            self._model = KittenTTS2Tiny(str(model), backend=backend, cache_dir=cache_dir, **model_options)
         else:
             if model_options:
                 raise TypeError('TTS 0.8 does not support: ' + ', '.join(sorted(model_options)))
@@ -35,7 +46,7 @@ class KittenTTS:
     @property
     def sample_rate(self):
         m = self._open()
-        return m.sample_rate if self.family == 'tts2' else m.model.sample_rate
+        return m.model.sample_rate if self.family == 'tts08' else m.sample_rate
 
     @property
     def capabilities(self):
@@ -50,11 +61,20 @@ class KittenTTS:
 
     def default_voice(self):
         m = self._open()
-        return m.default_voice if self.family == 'tts2' else 'expr-voice-5-m'
+        return 'expr-voice-5-m' if self.family == 'tts08' else m.default_voice
 
-    def list_voices(self):
+    def list_voices(self, language=None):
         m = self._open()
+        if self.family == 'tts2_tiny':
+            # Without a language: every voice name once (mini gives several languages the same voices).
+            return list(dict.fromkeys(v['name'] for v in m.voices(language)))
+        if language is not None:
+            raise TypeError('language= is available for Kitten TTS 2 mini, nano and pico')
         return m.list_voices() if self.family == 'tts2' else list(m.available_voices)
+
+    def languages(self):
+        m = self._open()
+        return list(m.languages) if self.family == 'tts2_tiny' else ['en']
 
     def _options(self, options, *, file=False):
         opts = dict(options)
@@ -63,6 +83,10 @@ class KittenTTS:
             if unknown:
                 raise TypeError('TTS 0.8 does not support: ' + ', '.join(sorted(unknown)))
             opts['clean_text'] = opts.pop('normalize', file)
+        elif self.family == 'tts2_tiny':
+            unknown = set(opts) - {'speed', 'language'}
+            if unknown:
+                raise TypeError('Kitten TTS 2 mini/nano/pico does not support: ' + ', '.join(sorted(unknown)))
         return opts
 
     def generate(self, text, voice=None, **options):
@@ -132,6 +156,14 @@ class KittenTTS:
         if self.family != 'tts08':
             raise NotImplementedError('standalone normalization is available for TTS 0.8')
         return self._model.normalize_text(text, locale=locale, return_spans=return_spans)
+
+    def phonemize(self, text, language=None):
+        """Kitten TTS 2 mini, nano and pico: the phoneme chunks the model speaks for `text` (a list of str). Apps that
+        run the C library (phones) send these chunks to kt08_synthesize_tiny."""
+        m = self._open()
+        if self.family != 'tts2_tiny':
+            raise NotImplementedError('phonemize is available for Kitten TTS 2 mini, nano and pico')
+        return m.phonemize(text, language)
 
     def close(self):
         if not self._closed:

@@ -1,5 +1,5 @@
 """Native Kitten speech synthesis: ``KittenTTS(model)`` selects a model explicitly."""
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 
 # Internal release inputs may be installed separately during native-engine tests.
 from pkgutil import extend_path

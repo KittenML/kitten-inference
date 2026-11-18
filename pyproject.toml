@@ -4,12 +4,18 @@ build-backend = "scikit_build_core.build"
 
 [project]
 name = "kitten-inference"
-version = "0.2.0"
-description = "Native inference for Kitten TTS 0.8 and Kitten TTS 2"
+version = "0.2.1"
+description = "Native inference for Kitten TTS 0.8, Kitten TTS 2 and Kitten TTS 2 mini, nano and pico"
 readme = "README.md"
 requires-python = ">=3.8"
 license = "Apache-2.0 AND MIT AND BSD-3-Clause AND LGPL-2.1-or-later AND NCSA AND PSF-2.0 AND Unicode-3.0 AND SunPro AND BSD-3-Clause WITH PCRE2-exception AND GPL-3.0-or-later WITH GCC-exception-3.1 AND Apache-2.0 WITH LLVM-exception AND LicenseRef-Microsoft-Visual-C-Runtime AND LicenseRef-NVIDIA-CUDA-EULA"
-license-files = ["LICENSE", "NOTICE", "engines/tts08/NOTICE", "engines/tts08/licenses/*.txt", "engines/tts2/NOTICE", "engines/tts2/licenses/*.txt", "engines/tts2/licenses/rocm/*.txt"]
+license-files = ["LICENSE", "NOTICE", "engines/lite/NOTICE", "engines/lite/licenses/*.txt", "engines/tts2/NOTICE", "engines/tts2/licenses/*.txt", "engines/tts2/licenses/rocm/*.txt", "src/kitten_inference/tts2_tiny/frontend/NOTICE"]
+# spacy, regex and addict: the English text front end of Kitten TTS 2 mini, nano and pico; fugashi and jaconv: Japanese
+# (mini). The code of misaki 0.9.4 and num2words 0.5.14 they use is vendored in src/kitten_inference/tts2_tiny/frontend,
+# and so is spaCy's small English model (en_core_web_sm 3.8.0), which works with spaCy 3.8 only.
+# CPython 3.10 to 3.14 (FRONT_END_PYTHONS in src/kitten_inference/tts2_tiny/model.py): on Python 3.9 pip picks spaCy
+# 3.8.17, which ships only as source and fails to build, and newer Pythons have no packages yet. fugashi has no package
+# for Windows on Arm. All of them install from wheels; Japanese downloads its dictionary on first use (frontend/unidic.py).
 dependencies = [
     "numpy>=1.23; python_version < \"3.9\"",
     "numpy>=1.24; python_version >= \"3.9\"",
@@ -18,7 +24,12 @@ dependencies = [
     "espeakng_loader>=0.2.4",
     "phonemizer>=3.3",
     "tokenizers>=0.22,<0.23; python_version >= \"3.9\" and ((sys_platform == \"linux\" and platform_machine == \"x86_64\") or (sys_platform == \"win32\" and platform_machine == \"AMD64\"))",
-    "filelock>=3.12; python_version >= \"3.9\" and ((sys_platform == \"linux\" and platform_machine == \"x86_64\") or (sys_platform == \"win32\" and platform_machine == \"AMD64\"))"
+    "filelock>=3.12; python_version >= \"3.9\" and ((sys_platform == \"linux\" and platform_machine == \"x86_64\") or (sys_platform == \"win32\" and platform_machine == \"AMD64\"))",
+    "spacy>=3.8,<3.9; python_version >= \"3.10\" and python_version < \"3.15\"",
+    "regex>=2023.10.3; python_version >= \"3.10\" and python_version < \"3.15\"",
+    "addict>=2.4; python_version >= \"3.10\" and python_version < \"3.15\"",
+    "jaconv>=0.3; python_version >= \"3.10\" and python_version < \"3.15\"",
+    "fugashi>=1.3.2; python_version >= \"3.10\" and python_version < \"3.15\" and platform_machine != \"ARM64\""
 ]
 
 [project.scripts]

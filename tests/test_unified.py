@@ -148,6 +148,9 @@ def test_dependency_markers():
         assert {'numpy','huggingface-hub','soundfile','phonemizer','espeakng-loader'} <= selected
         assert ('tokenizers' in selected) == gpu
         assert ('filelock' in selected) == gpu
+        # Kitten TTS 2 mini/nano/pico English and Japanese text: CPython 3.10 to 3.14
+        front_end = {'spacy', 'regex', 'addict', 'fugashi', 'jaconv'}
+        assert (front_end & selected) == (front_end if version in ('3.10', '3.11', '3.12', '3.13', '3.14') else set())
 
 
 def test_selected_model_version_reaches_native_command(monkeypatch):

@@ -1,4 +1,4 @@
-name: engines/tts08
+name: engines/lite
 
 # Builds and tests the TTS 0.8 engine wheels that the kitten-inference wheels are assembled from (packages.yml). Every
 # wheel is installed with its dependencies and runs the unit tests and the audio smoke test (tests/tts08). Nothing
@@ -15,7 +15,7 @@ on:
       - "pyproject.toml"
       - "build_support.py"
       - "CMakeLists.txt"
-      - "engines/tts08/**"
+      - "engines/lite/**"
       - ".github/workflows/tts-0.8.yml"
       - ".github/scripts/add_msvc_runtime.py"   # only this workflow runs it (the Windows wheel repair)
   pull_request:
@@ -25,7 +25,7 @@ on:
       - "pyproject.toml"
       - "build_support.py"
       - "CMakeLists.txt"
-      - "engines/tts08/**"
+      - "engines/lite/**"
       - ".github/workflows/tts-0.8.yml"
       - ".github/scripts/add_msvc_runtime.py"
 
@@ -33,7 +33,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: engines/tts08-${{ github.ref }}
+  group: engines/lite-${{ github.ref }}
   cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 env:
@@ -142,7 +142,7 @@ jobs:
           CIBW_CONFIG_SETTINGS: ${{ matrix.cmake_config_settings }}
           CIBW_BUILD_VERBOSITY: "1"
         with:
-          package-dir: engines/tts08
+          package-dir: engines/lite
           output-dir: wheelhouse
 
       # CPython 3.15 needs cibuildwheel 4, which no longer builds 3.8. Same image, flags and tests.
@@ -156,7 +156,7 @@ jobs:
           CIBW_CONFIG_SETTINGS: ${{ matrix.cmake_config_settings }}
           CIBW_BUILD_VERBOSITY: "1"
         with:
-          package-dir: engines/tts08
+          package-dir: engines/lite
           output-dir: wheelhouse
 
       - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff  # v6: pinned to a commit (a movable tag could run other code in a job that builds a published wheel)
@@ -429,7 +429,7 @@ jobs:
           CIBW_TEST_SKIP: ${{ matrix.test_skip }}
           CIBW_BUILD_VERBOSITY: "1"
         with:
-          package-dir: engines/tts08
+          package-dir: engines/lite
           output-dir: wheelhouse
 
       # CPython 3.15 needs cibuildwheel 4, which no longer builds 3.8. Same flags, repair and tests.
@@ -451,7 +451,7 @@ jobs:
           CIBW_TEST_COMMAND: ${{ matrix.test_command }}
           CIBW_BUILD_VERBOSITY: "1"
         with:
-          package-dir: engines/tts08
+          package-dir: engines/lite
           output-dir: wheelhouse
 
       - name: Test the cp38 arm64 wheel (Metal, then CPU)
@@ -561,7 +561,7 @@ jobs:
             cmake.define.ENABLE_OPENMP=OFF
           CIBW_BUILD_VERBOSITY_ANDROID: "1"
         with:
-          package-dir: engines/tts08
+          package-dir: engines/lite
           output-dir: wheelhouse
 
       - run: ls -l wheelhouse

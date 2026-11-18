@@ -123,7 +123,8 @@ def test_version_on_a_platform_without_an_engine(no_backends, monkeypatch, capsy
     out, err = capsys.readouterr()
     assert out == f"kitten-tts {version} (no Kitten TTS 2 engine on this platform)\n"
     assert err == ("kitten-tts: Kitten TTS 2 runs on Linux x86-64 (NVIDIA or AMD Radeon GPU) and Windows x64 "
-                   "(NVIDIA GPU); this is macOS arm64. Kitten TTS 0.8 runs here.\n")
+                   "(NVIDIA GPU); this is macOS arm64. Kitten TTS 0.8 and Kitten TTS 2 mini, nano and pico run "
+                   "here.\n")
     assert _cli.main(["--text", "x"]) == 1 and capsys.readouterr().out == ""
     # Linux x86-64 and Windows x64 have an engine: an install without its files is an error, --version included.
     monkeypatch.setattr(sys, "platform", "linux")

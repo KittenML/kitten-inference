@@ -342,8 +342,10 @@ def test_lock_inputs_records_the_inputs(world):
     assert modes[("cuda-linux", "_tts2_cuda/lib/libkt2n_engine.so")] == "0644"
     assert modes[("rocm", "_tts2_rocm/lib/libkt2n_engine.so")] == "0755"
     trees = lock["source_trees"]
-    assert set(trees["cuda"]) == set(trees["rocm"]) == set(aw.TTS2_SOURCES)
-    assert trees["tts08"]["engines/tts08/CMakeLists.txt"] is None
+    # The CUDA payload also carries the Kitten TTS 2 mini/nano/pico GPU library, built from the TTS 0.8 engine.
+    assert set(trees["cuda"]) == set(aw.ENGINE_SOURCES["cuda"]) == set(aw.TTS2_SOURCES) | {"engines/lite/engine", "engines/lite/cuda-library"}
+    assert set(trees["rocm"]) == set(aw.TTS2_SOURCES)
+    assert trees["tts08"]["engines/lite/CMakeLists.txt"] is None
     assert "src/kitten_inference/tts08/preprocess.py" in trees["tts08"]
     assert not any(p.endswith(("get_model.py", "_deps.py")) for p in trees["tts08"])  # the overlay is not recorded
     assert json.loads(li.dump(lock)) == lock

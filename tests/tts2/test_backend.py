@@ -33,7 +33,7 @@ def _runtimes(monkeypatch, *present):
     ("win32", "ARM64", "Windows ARM64"), ("android", "aarch64", "Android aarch64")])
 def test_platform_without_an_engine(no_backends, monkeypatch, system, machine, shown):
     _on(monkeypatch, system, machine)
-    expected = PLATFORMS + shown + ". Kitten TTS 0.8 runs here."
+    expected = PLATFORMS + shown + ". Kitten TTS 0.8 and Kitten TTS 2 mini, nano and pico run here."
     assert _backend.no_engine_message() == expected
     with pytest.raises(_backend.EngineNotInstalled) as e:
         _backend.find()

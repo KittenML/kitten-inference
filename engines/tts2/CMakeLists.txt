@@ -2,7 +2,7 @@
 cmake_minimum_required(VERSION 3.28)
 
 project(kt2n
-  VERSION 0.2.0
+  VERSION 0.2.1
   DESCRIPTION "Kitten TTS 2 native inference engine"
   LANGUAGES C CXX)
 

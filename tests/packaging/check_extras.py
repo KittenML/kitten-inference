@@ -15,6 +15,9 @@ from pathlib import Path
 
 TTS08 = {"espeakng-loader", "phonemizer", "soundfile", "numpy", "huggingface-hub"}
 TTS2 = {"numpy", "huggingface-hub", "tokenizers", "filelock"}
+# The text front end of Kitten TTS 2 mini, nano and pico, on CPython 3.10 to 3.14 (its markers in pyproject.toml;
+# fugashi not on Windows on Arm).
+TTS2_TINY = {"spacy", "regex", "addict", "jaconv", "fugashi"}
 # Libraries that only one extra brings in (the others also come as dependencies of huggingface-hub).
 EXCLUSIVE = {"espeakng-loader", "phonemizer", "soundfile", "tokenizers"}
 SPECS = [""]
@@ -49,11 +52,14 @@ def engines_here() -> dict:
 
 
 def subpackages() -> set:
-    return {"tts08", "tts2"} | {name for name, here in engines_here().items() if here}
+    return {"tts08", "tts2", "tts2_tiny"} | {name for name, here in engines_here().items() if here}
 
 
 def expected(pip_version: tuple) -> dict:
-    return {"": (TTS08 | (TTS2 if engines_here()["_tts2_cuda"] else set()), None)}
+    tiny = TTS2_TINY if (3, 10) <= sys.version_info[:2] <= (3, 14) else set()
+    if sys.platform == "win32" and platform.machine().upper() == "ARM64":
+        tiny = tiny - {"fugashi"}
+    return {"": (TTS08 | tiny | (TTS2 if engines_here()["_tts2_cuda"] else set()), None)}
 
 
 def project_of(filename: str) -> str:
