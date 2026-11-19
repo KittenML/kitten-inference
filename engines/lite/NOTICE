@@ -1,0 +1,155 @@
+Kitten TTS 0.8 inference engine (in the kitten-inference package)
+Copyright 2026 KittenML
+
+Original KittenML material is licensed under the Apache License, Version 2.0
+(LICENSE).
+
+Third-party code in Kitten TTS 0.8
+----------------------------------
+Every wheel:
+
+- stb: engine/src/utils/stb_image.h and engine/src/utils/stb_image_resize2.h
+  (https://github.com/nothings/stb) are compiled into the engine. Their
+  author offers them under the MIT License or as public domain; they are used
+  here under the MIT License:
+
+    Copyright (c) 2017 Sean Barrett
+
+    Permission is hereby granted, free of charge, to any person obtaining a copy
+    of this software and associated documentation files (the "Software"), to deal
+    in the Software without restriction, including without limitation the rights
+    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+    copies of the Software, and to permit persons to whom the Software is
+    furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in
+    all copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+    SOFTWARE.
+
+- pybind11 (https://github.com/pybind/pybind11), compiled into the engine
+  extension kitten_inference/tts08/_engine. BSD-3-Clause, Copyright (c) 2016
+  Wenzel Jakob; the full notice and licence are in licenses/pybind11.txt.
+
+Linux wheels (in kitten_inference_tts08.libs/):
+
+- libgomp-*.so.*: libgomp, the GNU OpenMP runtime library from GCC, copied
+  unchanged (apart from its file name and dynamic-section entries set by
+  auditwheel) from the build image: AlmaLinux 8 libgomp 8.5.0 (8.5.0-28 or
+  -29.el8_10.alma.1) in the manylinux_2_28 wheels, CentOS 7 libgomp 4.8.5
+  (4.8.5-44.el7) in the manylinux2014 wheels.
+  Copyright (C) Free Software Foundation, Inc. Licensed under the GNU General
+  Public License, version 3 or later, with the GCC Runtime Library Exception,
+  version 3.1: licenses/GPL-3.0.txt and licenses/GCC-exception-3.1.txt.
+  Source code: the gcc source packages of those releases
+  (https://vault.almalinux.org/8.10/BaseOS/Source/ and
+  https://vault.centos.org/7.9.2009/os/Source/), and https://gcc.gnu.org.
+
+Windows wheels (in kitten_inference_tts08.libs/):
+
+- msvcp140-*.dll and vcomp140-*.dll (and vcruntime140_1-*.dll in the CPython
+  3.8 wheels): the Microsoft Visual C++ runtime and OpenMP runtime libraries,
+  copied by delvewheel from the redistributable folder (VC\Redist) of the
+  Visual Studio that built the engine, and distributed under its licence
+  terms for distributable code
+  (https://learn.microsoft.com/visualstudio/releases/2026/redistribution).
+  Copyright (c) Microsoft Corporation.
+
+- kitten_inference/tts08/_msvc/msvcp140.dll, vcruntime140.dll and (x64)
+  vcruntime140_1.dll: the same Microsoft Visual C++ runtime libraries under
+  their own file names, copied unchanged from the same redistributable folder
+  under the same terms. espeak-ng (from espeakng_loader) needs them by these
+  names; the package loads them only when Windows cannot load an installed
+  Visual C++ runtime.
+
+C library for apps only (engines/lite/mobile, libkitten_tts08; not in any wheel):
+
+- CEPhonemizer: engine/src/frontend/cephonemizer/ (phonemizer.cpp,
+  phonemizer.h, rule_parser.h, ipa_table.h), KittenML's own C++ reader of
+  espeak-ng's English pronunciation rules, copied from
+  https://github.com/KittenML/KittenTTS-react-native (vendor/cephonemizer,
+  commit c90442e; the same files as KittenTTS-swift Sources/CEPhonemizer).
+  Copyright 2024 KittenML, Apache License 2.0; it contains no espeak-ng
+  source files (its ASCII-to-IPA table follows espeak-ng's phoneme symbol
+  mapping). Changed here (each change is marked "KittenML kitten-inference
+  change" in the source): debug switches read only in debug builds; en-us
+  "o@" written as in espeak-ng 1.52.0; en-us phrase variants ("?3 (...)") in
+  en_list honoured; no -s stripping of two-letter stems; lower-case
+  abbreviations spelt out; no exception on digit strings of more than 18
+  digits; a read-only accessor for clause-final stress flags.
+- engine/src/frontend/tiny_en (the English text front end of Kitten TTS 2
+  mini, nano and pico) is a C++ port of misaki 0.9.4's English G2P
+  (https://github.com/hexgrad/misaki, Apache License 2.0) as vendored in
+  src/kitten_inference/tts2_tiny/frontend/misaki/en.py, and of that folder's
+  english.py, tts_norm.py and bart_numpy.py (kittenml, Apache-2.0). Its
+  tokenizer is a C++ port of spaCy's tokenizer algorithm and English
+  punctuation rules (https://github.com/explosion/spaCy, MIT License,
+  Copyright (C) 2016-2024 ExplosionAI GmbH, 2016 spaCy GmbH, 2015 Matthew
+  Honnibal; licence text in licenses/spaCy.txt); no spaCy model is included.
+  Its number words (num_words.cpp) are original code written from the
+  expected English wording. The data
+  it reads at run time (misaki's lexicons, CMUdict in misaki's alphabet, the
+  BART weights, spaCy's tokenizer exceptions) is not part of the library: the
+  app supplies it (engines/lite/mobile/README.md, "Text to phonemes").
+- engine/src/frontend/espeak_lang.*, tiny_lang*.cpp and engine/src/frontend/lang/
+  {da,fi,fr,hi,ko,pt,sv,sw}.* (the text front ends of Kitten TTS 2 mini, nano and
+  pico for Spanish, Italian, Portuguese, French and German, and for mini Danish,
+  Hindi, Korean and Swedish; the Finnish, Swahili and Turkish code is in the tree but not enabled) are original KittenML code (Apache-2.0)
+  that reads espeak-ng's data files; no espeak-ng code is included, and the
+  per-language behaviour was found by running the reference as a black box. The ASCII-to-IPA table in espeak_lang.cpp comes from CEPhonemizer
+  (vendor/cephonemizer/ipa_table.h, Copyright 2024 KittenML, Apache-2.0).
+- engine/src/frontend/lang/ja*.cpp (the Japanese text front end of Kitten
+  TTS 2 mini) are original KittenML code (Apache-2.0): a reader of the
+  compiled UniDic/MeCab dictionary files written from their format (the
+  layout MeCab defines; MeCab is Copyright (c) 2001-2008 Taku Kudo and
+  2004-2008 Nippon Telegraph and Telephone Corporation, offered under the
+  BSD-3-Clause licence among others; no MeCab code is included or linked),
+  and a C++ version of the package's Japanese path. Its
+  kana-to-IPA table and rules come from cutlet.py (cutlet, MIT License,
+  Copyright (c) 2020 Paul O'Leary McCann, as adapted in misaki 0.9.4,
+  Apache-2.0), its number words from num2kana.py (Convert-Numbers-to-Japanese,
+  MIT License, Copyright (c) 2018 David Wilson) and its full-width table from
+  mojimoji 0.0.13 (Apache-2.0, Copyright 2013 Studio Ousia); the MIT terms are in
+  src/kitten_inference/tts2_tiny/frontend/NOTICE. ja_unicode_tables.inc is
+  generated from the Unicode Character Database (Unicode License v3,
+  https://www.unicode.org/license.txt) by engine/tools/gen_ja_unicode.py.
+- The UniDic 2.1.2 dictionary (sys.dic, unk.dic, matrix.bin, char.bin from
+  unidic-lite 1.0.8; UniDic Consortium, BSD-3-Clause or GPL/LGPL) is NOT part
+  of this repository or of any build: apps download it at run time
+  (mobile/fetch_phonemizer_data.sh ... ja), as the Python package does.
+- ja_words.txt (the Japanese word list read by the Japanese front end) is misaki 0.9.4's file, already in this repository at
+  src/kitten_inference/tts2_tiny/frontend/misaki/data/ja_words.txt under that package's NOTICE (Apache-2.0); the word list's own
+  upstream provenance was not checked separately.
+- espeak-ng's data files (en_rules, en_list and the other languages' rules,
+  word lists and phoneme definitions; GPL-3.0) are NOT part of this
+  repository or of any build. Apps download them at run time
+  (mobile/fetch_phonemizer_data.sh) and pass their paths to
+  kt08_phonemizer_load or their folder to kt08_tiny_frontend_load.
+
+Android wheel (in kitten_inference_tts08.libs/):
+
+- libc++_shared-*.so: the LLVM C++ standard library (libc++) from the Android
+  NDK. Apache License 2.0 with LLVM Exceptions: licenses/libc++.txt.
+
+Not included
+------------
+- Model weights. On first use the package downloads them from Hugging Face
+  (KittenML/meownn-models, revision 5e9bca0cc3a4e2a617f604b1333d5f34536c1eed).
+  They are the Kitten TTS 0.8 models, converted to this engine's format,
+  which KittenML publishes under the Apache License, Version 2.0
+  (https://huggingface.co/KittenML/kitten-tts-nano-0.8, -micro-0.8 and
+  -mini-0.8, and their int8 versions).
+- espeak-ng's data files (dictsource/<lang>_rules, <lang>_list, phsource/...),
+  GPL-3.0 (https://github.com/espeak-ng/espeak-ng). The C library's text front
+  end reads them at run time from a folder the app fills with
+  mobile/fetch_phonemizer_data.sh (pinned commit, SHA-256 checked); they are
+  not part of this repository, the library or any wheel.
+- Runtime dependencies, which pip installs separately under their own
+  licenses. Among them, phonemizer and the espeak-ng library shipped by
+  espeakng_loader are GPL-3.0.
