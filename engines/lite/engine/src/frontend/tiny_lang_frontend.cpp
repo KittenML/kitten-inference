@@ -10,8 +10,8 @@ namespace kt_fe {
 
 // Languages whose measured parity passed against the Python package (exact phoneme match, or an audio check on the
 // sentences that differ: engines/lite/mobile/README.md). Others return KT08_ERR_UNSUPPORTED.
-static const char* const kSupportedV1[] = {"es", "it"};   // nano, pico
-static const char* const kSupportedV2[] = {"es", "it"};   // mini
+static const char* const kSupportedV1[] = {"de", "es", "fr", "it", "pt"};   // nano, pico
+static const char* const kSupportedV2[] = {"da", "de", "es", "fr", "hi", "it", "ja", "ko", "pt", "sv"};   // mini (sw, tr, fi: rules kept, not enabled: failed a fresh-text check)
 
 bool TinyLangFrontend::supported(const std::string& lang, int version) {
     if (version == 1) { for (auto* l : kSupportedV1) if (lang == l) return true; }
@@ -24,6 +24,20 @@ int TinyLangFrontend::text_to_chunks(const std::string& text, const std::string&
     chunks.clear();
     if (!supported(lang, version_)) { err = "language not supported by this build: " + lang; return 6; }
     if (dir_.empty()) { err = "this language needs espeak_data_dir at kt08_tiny_frontend_load"; return 6; }
+    if (lang == "ja") {   // misaki's Japanese path (frontend/lang/ja.cpp), data in <espeak_data_dir>/ja
+        if (!ja_) {
+            ja_ = JaFrontend::load(dir_ + "/ja", &err);
+            if (!ja_) return 2;
+        }
+        try {
+            chunks = ja_->chunks(text, &vocab_);
+        } catch (const JaTextError& e) {   // text the Python package raises on too (lang/ja.hpp)
+            chunks.clear();
+            err = e.what();
+            return 1;   // KT08_ERR_ARGUMENT
+        }
+        return 0;
+    }
     auto it = engines_.find(lang);
     if (it == engines_.end()) {
         auto eng = EspeakLang::load(tiny_lang_voice(lang), dir_, &err);

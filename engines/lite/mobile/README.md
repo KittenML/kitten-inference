@@ -4,8 +4,9 @@ A C library for Android and iOS apps: the same engine as the Python package, wit
 and Kitten TTS 2 mini, nano and pico ([below](#kitten-tts-2-mini-nano-and-pico)).
 Give it phonemes; it returns 24 kHz mono audio, sample for sample what the Python package makes from the same
 phonemes with the same build settings. It also turns text into those phonemes on the phone, so an app gives text
-and gets audio: English for Kitten TTS 0.8 ([Text to phonemes](#text-to-phonemes-kitten-tts-08)) and English, Spanish
-and Italian for Kitten TTS 2 mini, nano and pico ([Text to phonemes](#text-to-phonemes-mini-nano-pico)).
+and gets audio: English for Kitten TTS 0.8 ([Text to phonemes](#text-to-phonemes-kitten-tts-08)); English, Spanish, Italian,
+Portuguese, French and German for Kitten TTS 2 nano and pico; and those plus Danish, Hindi, Japanese, Korean
+and Swedish for mini ([Text to phonemes](#text-to-phonemes-mini-nano-pico)).
 
 Kitten TTS 0.8 mini, fp32, 12 sentences (122 s of audio), measured with this library on each phone:
 
@@ -84,14 +85,17 @@ complete program.
 
 | Model and language | Files | Where from | Size | Licence |
 |---|---|---|---|---|
-| Kitten TTS 0.8, English | `en_rules`, `en_list` | espeak-ng, commit `59eb19938f12e30881c81d86ce4a7de25414c9f4`: `fetch_phonemizer_data.sh DIR en` | 264 KB | GPL-3.0 (data) |
+| Kitten TTS 0.8, English | `en_rules`, `en_list` | espeak-ng 1.52.0 (commit `4870adfa25b1a32b4361592f1be8a40337c58d6c`): `fetch_phonemizer_data.sh DIR en` | 264 KB | GPL-3.0 (data) |
 | Kitten TTS 2, English | `cmu_misaki_us.json`, `g2p_bart_en_us/` | the model repository's `g2p/` folder (the same for mini, nano and pico) | 6.4 MB | the model repository's (Apache-2.0); CMUdict's BSD-style licence |
 | | `us_gold.json`, `us_silver.json`, `spacy_en_exceptions.json` | `python -m kitten_inference.tts2_tiny.frontend.export_phone_data DIR` | 6.1 MB | Apache-2.0 (misaki), MIT (spaCy) |
-| Kitten TTS 2, Spanish | `es_rules`, `es_list`, `phsource/{phonemes,ph_base2,ph_spanish}`, and the English files | espeak-ng, same commit: `fetch_phonemizer_data.sh DIR es` | 330 KB | GPL-3.0 (data) |
-| Kitten TTS 2, Italian | `it_rules`, `it_list`, `it_listx`, `phsource/{phonemes,ph_base2,ph_italian}`, and the English, German, Spanish and French files its rules use for foreign words (required: keep them all) | espeak-ng, same commit: `fetch_phonemizer_data.sh DIR it` | 627 KB | GPL-3.0 (data) |
+| Kitten TTS 2, Spanish | `es_rules`, `es_list`, `phsource/{phonemes,ph_base2,ph_spanish}`, and the English files | espeak-ng 1.52.0: `fetch_phonemizer_data.sh DIR es` | 330 KB | GPL-3.0 (data) |
+| Kitten TTS 2, Italian | `it_rules`, `it_list`, `it_listx`, `phsource/{phonemes,ph_base2,ph_italian}`, and the English, German, Spanish and French files its rules use for foreign words (required: keep them all) | espeak-ng 1.52.0: `fetch_phonemizer_data.sh DIR it` | 627 KB | GPL-3.0 (data) |
+| Kitten TTS 2 mini, Danish | `da_rules`, `da_list`, `phsource/{phonemes,ph_base2,ph_danish}`, and the English and Spanish files (the words with n-tilde) | espeak-ng 1.52.0: `fetch_phonemizer_data.sh DIR da` | 330 KB | GPL-3.0 (data) |
+| Kitten TTS 2, Portuguese, French, German; mini also Hindi, Korean, Swedish | `<lang>_rules`, `<lang>_list` (+ `it_listx`, `de_emoji`), the language's `phsource/ph_*` files, `phsource/{phonemes,ph_base2}` and the English files | espeak-ng 1.52.0: `fetch_phonemizer_data.sh DIR pt fr de hi ko sv` | 30 to 150 KB per language | GPL-3.0 (data) |
+| Kitten TTS 2 mini, Japanese | UniDic 2.1.2 (`sys.dic`, `unk.dic`, `matrix.bin`, `char.bin`) and `ja_words.txt` | `fetch_phonemizer_data.sh DIR ja` (unidic-lite 1.0.8 from PyPI; run from a checkout for `ja_words.txt`) | 47 MB download, 260 MB unpacked | BSD-3-Clause (UniDic), Apache-2.0 (misaki word list) |
 
   `fetch_phonemizer_data.sh` downloads the espeak-ng files from
-  `https://raw.githubusercontent.com/espeak-ng/espeak-ng/59eb19938f12e30881c81d86ce4a7de25414c9f4/` and checks
+  `https://raw.githubusercontent.com/espeak-ng/espeak-ng/4870adfa25b1a32b4361592f1be8a40337c58d6c/` (the 1.52.0 release) and checks
   their SHA-256 sums. The library contains no espeak-ng code and reads only these data files, which are downloaded
   at run time and never bundled: the same approach as KittenML's own phone SDKs (KittenTTS-react-native,
   KittenTTS-swift), whose CEPhonemizer this library uses for Kitten TTS 0.8. Apps that mirror the files should keep
@@ -224,28 +228,58 @@ arm64 Linux box) a sentence takes 0.1 ms (median; 99 % of LibriSpeech sentences 
 that is in none of the dictionaries goes through the BART model, about 1.4 ms the first time on the Cortex-A725 (it
 is remembered after that); about 1 sentence in 15 of LibriSpeech has one.
 
-**Spanish and Italian** (nano, pico and mini) are built in too. They use the library's own reader of espeak-ng's
-data files (no espeak-ng code is linked or copied), then the package's symbol tables (`phonemize_v1.py` for nano and
-pico, `phonemize_v2.py` for mini). Pass `espeak_data_dir`, the folder that `fetch_phonemizer_data.sh` fills, to
-`kt08_tiny_frontend_load`, and `"es"` or `"it"` as the language. Each language's files are read once, on first use.
-Other languages return `KT08_ERR_UNSUPPORTED`; for them, `KittenTTS("KittenML/kitten-tts-2-nano").phonemize(text,
-language="de")` returns the phoneme chunks on a computer, so an app can phonemize on a server or ship the chunks of
-fixed prompts.
+**Other languages** are built in too. They use the library's own reader of espeak-ng's data files (no espeak-ng code is
+linked or copied), then the package's symbol tables (`phonemize_v1.py` for nano and pico, `phonemize_v2.py` for mini);
+Japanese has its own reader (below). Pass `espeak_data_dir`, the folder that `fetch_phonemizer_data.sh DIR` fills, to
+`kt08_tiny_frontend_load`, and the language code (`"es"`, `"it"`, ...) as the language. Each language's files are read
+once, on first use; the library does not check them again, so an app must keep the folder unchanged after the fetch script has verified it (a file truncated while mapped can crash the process). A language this build does not support returns `KT08_ERR_UNSUPPORTED` (6), and so does a language
+the chosen model was not trained on; for those, `KittenTTS("KittenML/kitten-tts-2-nano").phonemize(text, language="de")`
+returns the phoneme chunks on a computer, so an app can phonemize on a server or ship the chunks of fixed prompts.
 
-How close it is to the Python package (measured on FLEURS test sentences; the same for nano, pico and mini):
+| Language | nano, pico (v1) | mini (v2) | Exact match with the package, FLEURS test | Other text (held-out unless the notes below say otherwise) | Machine listening test on the sentences that differ |
+|---|---|---|---|---|---|
+| Spanish | yes | yes | 328 / 348 (94.3 %) | | nano -0.38 points [-0.86, +0.07]; mini -0.81 [-1.22, -0.43] |
+| Italian | yes | yes | 314 / 346 (90.8 %) | | nano +0.07 [-0.21, +0.36]; mini -0.17 [-0.45, +0.08] |
+| German | yes | yes | 331 / 347 (95.4 %) | NTREX and WMT14 news, 3619 / 3828 (94.5 %) | nano -0.21 points [-0.64, +0.18]; mini +0.03 [-0.38, +0.43] (150 held-out differences) |
+| Portuguese (Brazil) | yes | yes | 349 / 349 (100 %) | NTREX news, 997 / 1000 (99.7 %) | not needed (>= 99 % exact) |
+| French | yes | yes | 330 / 332 (99.4 %) | NTREX news, 1773 / 1822 (97.3 %) | all 125 differing sentences: nano -0.18 [-0.82, +0.48]; mini -0.32 [-1.02, +0.38]; 200 more held-out sentences for nano: -7.38 [-18.03, -1.21], and -5.19 [-15.52, +0.48] on the 189 of them in Latin letters |
+| Danish | no | yes | 347 / 350 (99.1 %) | FLEURS dev and train 742 / 750 (98.9 %: below 99 % on its own) and NTREX news 992 / 1000 (99.2 %); 1734 / 1750 together (99.1 %), and Danish passes the 99 % rule only on the two sets together | not decisive: the listening test on the 16 differing held-out sentences is too small to count (mini +1.56 [-0.90, +4.04]) |
+| Hindi | no | yes | 263 / 265 (99.2 %) | FLORES 338 / 344 (98.3 %), WMT news 303 / 316 (95.9 %) | all 37 differing lines: mini -2.19 [-4.97, 0.00] |
+| Japanese | no | yes | 321 / 321 (100 %) | Tatoeba 3000 / 3000, JSUT 4995 / 4995 | not needed |
+| Korean | no | yes | 268 / 270 (99.3 %) | second half of a 876-sentence set, never fixed on: 435 / 438 (99.3 %); fresh text: Korean Wikipedia and Naver news, 2500 sentences, 88.24 % (Wikipedia 84.80 %, news 93.40 %); 98.33 % on the 1620 that use Hangul only (the rest have Latin letters, digits or symbols) | on 70 of the 294 differing fresh sentences mini -4.32 [-8.61, -0.17] (ours better, mainly because the package reads Latin letters aloud as long English text) |
+| Swedish | no | yes | 341 / 341 (100 %) | Wikipedia 39,822 / 40,000 (99.6 %) | 150 held-out differences: mini -7.67 [-12.23, -3.86] |
 
-| Language | Sentences | Exact match | Listening test by machine on 150 differing sentences (word error rate change, 95 % interval) |
-|---|---|---|---|
-| Spanish | 348 | 94.3 % | nano -0.38 points [-0.86, +0.07]; mini -0.81 [-1.22, -0.43] |
-| Italian | 346 | 90.8 % | nano +0.07 points [-0.21, +0.36]; mini -0.17 [-0.45, +0.08] |
+The held-out and listening-test figures are the numbers measured in each language's own work, not re-run on the merged build; the FLEURS test column was re-run on the merged build and matches. Korean passes on the listening test, not on exact match: on fresh text only 88.24 % of sentences are identical, nearly all of the rest contain Latin letters, digits or symbols, where the library and the package differ and ours does better in the listening test (the 27 differing Hangul-only sentences: -10.08 [-14.71, -5.45]).
 
-Not supported yet: German (71 % exact; its listening test does not pass), French (30 %), Portuguese, Russian and
-Hindi, mini's Danish, Finnish, Dutch, Swedish, Swahili, Turkish and Korean (not tried), and Japanese.
-Speed, one thread, measured: on a phone's Cortex-A53 core (Oppo A96) a FLEURS sentence takes 1.3 ms in Spanish and
-1.5 ms in Italian (mean; 90 % under 1.9 and 2.4 ms, slowest 6.5 and 8.3 ms); the first sentence also reads the
-language's files (20 ms for Spanish, 93 ms for Italian). On a Cortex-A725 core: 0.2 ms (median). A loaded language
-takes 0.5 to 2.6 MiB (up to 5.4 MiB for Italian once its foreign-word data is read). Symbols missing from `vocab.json` are dropped and
-text is cut into chunks of at most 350 phonemes, as for English.
+Every number is the share of sentences whose phoneme chunks are exactly the Python package's (espeak-ng 1.52.0 through
+`espeakng_loader`), measured with this library's tool on one data folder made by `fetch_phonemizer_data.sh` (the same
+for every language); the listening test is Whisper large-v3 word error rate with the package's phonemes against the
+library's on the same model, difference with a 95 % interval. The rule for switching a language on: exact match of at least 99 % on the
+held-out text, or, below that, a listening test whose upper bound is at most +0.5 points. Spanish and Italian passed on
+the second rule and were switched on earlier. Not switched on, and returning `KT08_ERR_UNSUPPORTED`:
+Finnish (matched on FLEURS and on simple sentences, but 97.64 % on 2500 fresh Wikipedia and news sentences, and the listening test on the 59 differing ones failed: +0.65 [-2.96, +4.60]), Dutch (82 % exact), Russian (listening test failed at 200 held-out differences), Hindi for nano and pico (listening test failed), and Swahili and Turkish. Swahili and Turkish matched the package on their FLEURS test sets, but on fresh text (not used while writing the rules) they did not: Swahili 94.00 % on 1500 Wikipedia sentences (96.18 % on the ones in Latin letters only), Turkish 97.84 % on 2500 news and Wikipedia sentences (98.95 % Latin-only), and on the mismatches the machine listening test failed. The cause is text that is not plain words: numbers, thousands separators, amounts, web addresses and Roman numerals, which the library does not read the way espeak-ng does. Their rules stay in the source, and `fetch_phonemizer_data.sh DIR sw tr` still fetches their files, but the library returns `KT08_ERR_UNSUPPORTED` for both.
+Non-Latin letters inside text of another language are skipped by the library, while the package reads some of them aloud
+as English letter names (this drives part of the French result above).
+Speed, one thread, on a Cortex-A725 core, warm, FLEURS sentences: 0.13 to 0.3 ms per sentence for every language above except Danish
+(Hindi 0.17, Korean 0.19, Swedish 0.21, French 0.25, Portuguese 0.28 ms, Japanese 0.13 ms; Danish 0.81 ms mean, 4.9 ms slowest, load 20 ms and +8 MiB, measured separately on a Cortex-A725 core);
+reading a language's files takes 2 to 5 ms on first use and 0.5 to 4 MiB (5 to 6 MiB more once the English data is read for
+English words inside the text). On a phone's Cortex-A53 core (Oppo A96) a sentence takes 1.3 ms in Spanish and 1.5 ms in
+Italian (mean; slowest 6.5 and 8.3 ms). Symbols missing from `vocab.json` are dropped and text is cut into chunks of at
+most 350 phonemes, as for English.
+
+**Japanese** (mini) is built in with the package's own steps (misaki's cutlet path): Unicode NFKC and full-width
+folding, numbers as kana, word segmentation with the UniDic 2.1.2 dictionary (the library's own reader of the
+dictionary files that the Python package uses through unidic-lite; no MeCab code), readings to IPA, misaki's word
+list, then `phonemize_v2.py`'s folds. `fetch_phonemizer_data.sh DIR ja` puts the dictionary (47 MB download, 260 MB
+unpacked; BSD licence) and `ja_words.txt` in `DIR/ja/` (`ja_words.txt` is copied from the repository checkout, so for Japanese the script must run from a checkout, or an app must ship that file itself); pass `DIR` as `espeak_data_dir` and `"ja"` as the language.
+The dictionary is memory-mapped, so it costs disk space rather than app memory. Measured on one Cortex-A725 core:
+loading (on the first Japanese call) takes 18 ms and 4 MiB; a FLEURS sentence then takes 0.13 ms (median; 90 % under
+0.19 ms), or about 0.4 ms (median; the first call 30 ms, loading included) when the dictionary pages have to be read
+from storage. The dictionary pages a text touches are file pages that the system can drop at any time: 46 MiB of them
+were resident after 321 sentences read from storage, and 142 MiB when the whole dictionary was already in the system's
+file cache. Text that the package raises an error on is refused here too (`KT08_ERR_ARGUMENT`): a number of more than 9
+digits, and digits other than 0-9 that NFKC keeps (such as `٣` or `❶`); on 4,000 lines of such text the library and the
+package agreed on every line (same phonemes, or both refuse). nano and pico have no Japanese.
 
 Text in, audio out, on a phone (`kt08_example`, Oppo A96, Android 13, the library's defaults, two paragraphs per
 model): Kitten TTS 2 nano speaks English at a real-time factor of 0.39 (peak memory 96 MiB) and Spanish at 0.42

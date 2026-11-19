@@ -790,7 +790,17 @@ if(KITTEN_BUILD_C_LIBRARY)
     add_library(kitten_tiny_lang OBJECT
         src/frontend/espeak_lang.cpp
         src/frontend/tiny_lang.cpp
-        src/frontend/tiny_lang_frontend.cpp)
+        src/frontend/tiny_lang_frontend.cpp
+        src/frontend/lang/da.cpp
+        src/frontend/lang/fi.cpp
+        src/frontend/lang/fr.cpp
+        src/frontend/lang/hi.cpp
+        src/frontend/lang/ja.cpp
+        src/frontend/lang/ja_dict.cpp
+        src/frontend/lang/ko.cpp
+        src/frontend/lang/pt.cpp
+        src/frontend/lang/sv.cpp
+        src/frontend/lang/sw.cpp)
     target_include_directories(kitten_tiny_lang PRIVATE src)
     set_target_properties(kitten_tiny_lang PROPERTIES POSITION_INDEPENDENT_CODE ON CXX_VISIBILITY_PRESET hidden
                                                       VISIBILITY_INLINES_HIDDEN ON)
@@ -925,6 +935,10 @@ if(KITTEN_BUILD_C_LIBRARY)
         add_executable(tiny_lang_tool tools/tiny_lang_tool.cpp $<TARGET_OBJECTS:kitten_tiny_lang>)
         target_include_directories(tiny_lang_tool PRIVATE src include)
         target_link_libraries(tiny_lang_tool PRIVATE kitten_tts08)
+        add_executable(ja_tool tools/ja_tool.cpp $<TARGET_OBJECTS:kitten_tiny_lang>)
+        target_include_directories(ja_tool PRIVATE src include)
+        target_compile_definitions(ja_tool PRIVATE KT_JA_TOOL_API=1)
+        target_link_libraries(ja_tool PRIVATE kitten_tts08)
     endif()
 endif()
 

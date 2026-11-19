@@ -10,7 +10,8 @@ and hardware for each:
 
 Every model uses the same Python API (`from kitten_inference import KittenTTS`) and command line (`kitten-tts`). The
 same engines also build as a C library for Android and iOS apps, which takes text and returns audio on the phone
-(English for Kitten TTS 0.8; English, Spanish and Italian for Kitten TTS 2 mini, nano and pico:
+(English for Kitten TTS 0.8; English, Spanish, Italian, Portuguese, French and German for Kitten TTS 2 nano and pico; those
+and Danish, Hindi, Japanese, Korean and Swedish for mini:
 [engines/lite/mobile](https://github.com/KittenML/kitten-inference/blob/main/engines/lite/mobile/README.md)).
 
 How it compares with the official packages:

@@ -22,7 +22,7 @@ ENGINE = LITE / "engine"
 CEPH = ENGINE / "src" / "frontend" / "cephonemizer"
 HEADER = ENGINE / "include" / "kitten_tts08.h"
 FETCH = LITE / "mobile" / "fetch_phonemizer_data.sh"
-PINNED = "59eb19938f12e30881c81d86ce4a7de25414c9f4"
+PINNED = "4870adfa25b1a32b4361592f1be8a40337c58d6c"   # espeak-ng 1.52.0, the release the Python package runs
 
 # Text that the package's normalisation changes in many ways (numbers, money, times, units, contractions, URLs, ...).
 NORMALISATION_CASES = [
@@ -86,8 +86,8 @@ class SourceTests(unittest.TestCase):
     def test_fetch_script_pins_the_data(self):
         s = FETCH.read_text(encoding="utf-8")
         self.assertIn(PINNED, s)
-        for name, digest in (("en_rules", "8e75e9341ea735cc514b29a7d3a95c6c241c1cc176ad43e5699b8f7f66ab3194"),
-                             ("en_list", "24eb79018ed6253c10682096de672ce9265c1fe15c3e19e7f754d57a0fcd9790")):
+        for name, digest in (("en_rules", "884550dda08d0ba9d5ca713bf3a5ed295002d5de8a43b4346a81fcd040d19dc8"),
+                             ("en_list", "78519730c462888dd9445042e48ebe07d461a1ed57ff70f1139f4cc9a732b9e0")):
             self.assertRegex(s, r"dictsource/" + name + " " + digest)
         self.assertIn("dictsource", s)
         self.assertTrue(os.access(FETCH, os.X_OK))

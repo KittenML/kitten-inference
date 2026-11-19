@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "frontend/espeak_lang.h"
+#include "frontend/lang/ja.hpp"
 
 namespace kt_fe {
 
@@ -30,6 +31,7 @@ private:
     std::unordered_set<char32_t> vocab_;
     std::string dir_;
     std::map<std::string, std::unique_ptr<EspeakLang>> engines_;
+    std::unique_ptr<JaFrontend> ja_;   // Japanese (mini): not espeak; its files are in <espeak_data_dir>/ja
 };
 
 }  // namespace kt_fe

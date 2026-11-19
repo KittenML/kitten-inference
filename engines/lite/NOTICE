@@ -97,11 +97,35 @@ C library for apps only (engines/lite/mobile, libkitten_tts08; not in any wheel)
   it reads at run time (misaki's lexicons, CMUdict in misaki's alphabet, the
   BART weights, spaCy's tokenizer exceptions) is not part of the library: the
   app supplies it (engines/lite/mobile/README.md, "Text to phonemes").
-- engine/src/frontend/espeak_lang.*, tiny_lang*.cpp (the Spanish and Italian
-  text front end of Kitten TTS 2 mini, nano and pico) are original KittenML
-  code (Apache-2.0) that reads espeak-ng's data files; no espeak-ng code is
-  included. The ASCII-to-IPA table in espeak_lang.cpp comes from CEPhonemizer
+- engine/src/frontend/espeak_lang.*, tiny_lang*.cpp and engine/src/frontend/lang/
+  {da,fi,fr,hi,ko,pt,sv,sw}.* (the text front ends of Kitten TTS 2 mini, nano and
+  pico for Spanish, Italian, Portuguese, French and German, and for mini Danish,
+  Hindi, Korean and Swedish; the Finnish, Swahili and Turkish code is in the tree but not enabled) are original KittenML code (Apache-2.0)
+  that reads espeak-ng's data files; no espeak-ng code is included, and the
+  per-language behaviour was found by running the reference as a black box. The ASCII-to-IPA table in espeak_lang.cpp comes from CEPhonemizer
   (vendor/cephonemizer/ipa_table.h, Copyright 2024 KittenML, Apache-2.0).
+- engine/src/frontend/lang/ja*.cpp (the Japanese text front end of Kitten
+  TTS 2 mini) are original KittenML code (Apache-2.0): a reader of the
+  compiled UniDic/MeCab dictionary files written from their format (the
+  layout MeCab defines; MeCab is Copyright (c) 2001-2008 Taku Kudo and
+  2004-2008 Nippon Telegraph and Telephone Corporation, offered under the
+  BSD-3-Clause licence among others; no MeCab code is included or linked),
+  and a C++ version of the package's Japanese path. Its
+  kana-to-IPA table and rules come from cutlet.py (cutlet, MIT License,
+  Copyright (c) 2020 Paul O'Leary McCann, as adapted in misaki 0.9.4,
+  Apache-2.0), its number words from num2kana.py (Convert-Numbers-to-Japanese,
+  MIT License, Copyright (c) 2018 David Wilson) and its full-width table from
+  mojimoji 0.0.13 (Apache-2.0, Copyright 2013 Studio Ousia); the MIT terms are in
+  src/kitten_inference/tts2_tiny/frontend/NOTICE. ja_unicode_tables.inc is
+  generated from the Unicode Character Database (Unicode License v3,
+  https://www.unicode.org/license.txt) by engine/tools/gen_ja_unicode.py.
+- The UniDic 2.1.2 dictionary (sys.dic, unk.dic, matrix.bin, char.bin from
+  unidic-lite 1.0.8; UniDic Consortium, BSD-3-Clause or GPL/LGPL) is NOT part
+  of this repository or of any build: apps download it at run time
+  (mobile/fetch_phonemizer_data.sh ... ja), as the Python package does.
+- ja_words.txt (the Japanese word list read by the Japanese front end) is misaki 0.9.4's file, already in this repository at
+  src/kitten_inference/tts2_tiny/frontend/misaki/data/ja_words.txt under that package's NOTICE (Apache-2.0); the word list's own
+  upstream provenance was not checked separately.
 - espeak-ng's data files (en_rules, en_list and the other languages' rules,
   word lists and phoneme definitions; GPL-3.0) are NOT part of this
   repository or of any build. Apps download them at run time

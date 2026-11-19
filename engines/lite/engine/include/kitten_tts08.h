@@ -4,7 +4,8 @@
  *
  * The library turns phonemes into 24 kHz mono float audio. It can also turn text into those phonemes, as the Python
  * package does: English for Kitten TTS 0.8 (API version 4, kt08_phonemizer_* and kt08_text_*), and English, Spanish
- * and Italian for Kitten TTS 2 mini, nano and pico (API version 5, kt08_tiny_frontend_* and kt08_tiny_text_*). The
+ * and Italian for Kitten TTS 2 mini, nano and pico, and Japanese for mini (API version 5, kt08_tiny_frontend_* and
+ * kt08_tiny_text_*). The
  * data files these read are downloaded by the app: see engines/lite/mobile/README.md. It can also speak a text chunk
  * by chunk with the same chunks as the Python package's stream() (API version 6, kt08_stream_*).
  *
@@ -242,7 +243,9 @@ KT08_API kt08_status kt08_synthesize_tiny_npu(kt08_npu* npu, const int32_t* ids,
  * `python -m kitten_inference.tts2_tiny.frontend.export_phone_data DIR`. Languages other than English read espeak-ng's
  * data files (pronunciation rules, word lists and phoneme definitions; GPL-3.0 data, not part of this library) from
  * espeak_data_dir, which the app downloads once (engines/lite/mobile/fetch_phonemizer_data.sh); each language is
- * parsed once, on first use. engines/lite/mobile/README.md, "Text to phonemes", lists the supported languages with
+ * parsed once, on first use. Japanese (mini) reads the UniDic dictionary and misaki's word list from
+ * espeak_data_dir/ja (also fetched by that script; the dictionary files are memory-mapped, not copied).
+ * engines/lite/mobile/README.md, "Text to phonemes", lists the supported languages with
  * their measured match rates; the others return KT08_ERR_UNSUPPORTED.
  * A kt08_tiny_frontend may be shared between threads (calls on one front end run one at a time). */
 typedef struct kt08_tiny_frontend kt08_tiny_frontend;
@@ -259,8 +262,11 @@ KT08_API void kt08_tiny_frontend_free(kt08_tiny_frontend* fe);
 /* Converts UTF-8 text into phoneme chunks of at most 350 symbols, joined with '\n' in *out_chunks (free it with
  * kt08_free; an empty string when the text has nothing to say). language: "en", or another code of the model
  * ("es", ...). Languages this build does not support return KT08_ERR_UNSUPPORTED. Text with more than 1000
- * characters in a row without a space, tab or line break gives KT08_ERR_TOO_LONG. Italian also reads the en, de, es
- * and fr files that fetch_phonemizer_data.sh fetches (for foreign words in the Italian word list): keep them all. */
+ * characters in a row without a space, tab or line break (in Japanese also 。、！？ or the ideographic space) gives
+ * KT08_ERR_TOO_LONG. Italian also reads the en, de, es
+ * and fr files that fetch_phonemizer_data.sh fetches (for foreign words in the Italian word list): keep them all.
+ * Japanese text with a number of more than 9 digits, or with a digit that is not 0-9 (such as "٣" or "❶"), returns
+ * KT08_ERR_ARGUMENT: the Python package raises an error on such text too (it has no words for them). */
 KT08_API kt08_status kt08_tiny_text_to_phonemes(kt08_tiny_frontend* fe, const char* text_utf8, const char* language,
                                                 char** out_chunks);
 

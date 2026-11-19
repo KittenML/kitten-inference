@@ -29,14 +29,21 @@ using kt08_internal::set_error;
 namespace {
 // Text with more than kMaxRun characters (code points) in a row without an ASCII space, tab or line break is refused
 // with KT08_ERR_TOO_LONG, as in the Kitten TTS 0.8 text calls: the English normaliser's regular expressions take
-// time (and stack) that grows with the longest run, and no word is that long.
+// time (and stack) that grows with the longest run, and no word is that long. Japanese is written without spaces,
+// so there a run also ends at 。、！？ and the ideographic space (a paragraph is many runs, as it is many sentences).
 constexpr size_t kMaxRun = 1000;
-bool has_long_run(const char* s) {
+bool has_long_run(const char* s, bool japanese = false) {
     size_t run = 0;
     for (; *s; ++s) {
         unsigned char c = (unsigned char)*s;
         if (c == ' ' || (c >= 9 && c <= 13)) run = 0;
-        else if ((c & 0xC0) != 0x80 && ++run > kMaxRun) return true;
+        else if (japanese && ((c == 0xE3 && (unsigned char)s[1] == 0x80 && (unsigned char)s[2] >= 0x80 &&
+                               (unsigned char)s[2] <= 0x82) ||                       // U+3000 U+3001 U+3002
+                              (c == 0xEF && (unsigned char)s[1] == 0xBC &&
+                               ((unsigned char)s[2] == 0x81 || (unsigned char)s[2] == 0x9F)))) {  // U+FF01 U+FF1F
+            run = 0;
+            s += 2;
+        } else if ((c & 0xC0) != 0x80 && ++run > kMaxRun) return true;
     }
     return false;
 }
@@ -61,7 +68,7 @@ kt08_status tiny_sentences(kt08_tiny_frontend* fe, const char* text_utf8, const 
     out.clear();
     kt08_status st = check_language(fe, language);
     if (st != KT08_OK) return st;
-    if (has_long_run(text_utf8))
+    if (has_long_run(text_utf8, language == "ja"))
         return set_error(KT08_ERR_TOO_LONG, "text has more than 1000 characters without a space; split it or remove that part");
     try {
         std::lock_guard<std::mutex> lock(fe->mu);
@@ -144,7 +151,7 @@ KT08_API kt08_status kt08_tiny_text_to_phonemes(kt08_tiny_frontend* fe, const ch
     if (!english && !fe->other)
         return set_error(KT08_ERR_UNSUPPORTED,
                          std::string("language ") + language + " needs espeak_data_dir at kt08_tiny_frontend_load");
-    if (has_long_run(text_utf8))
+    if (has_long_run(text_utf8, std::strcmp(language, "ja") == 0))
         return set_error(KT08_ERR_TOO_LONG, "text has more than 1000 characters without a space; split it or remove that part");
     try {
         std::lock_guard<std::mutex> lock(fe->mu);
