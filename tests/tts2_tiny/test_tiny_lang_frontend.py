@@ -36,12 +36,12 @@ IT = [
 
 class SourceTest(unittest.TestCase):
     def test_header_declares_front_end(self):
-        h = HEADER.read_text()
+        h = HEADER.read_text(encoding="utf-8")
         for name in ("kt08_tiny_frontend_load", "kt08_tiny_frontend_free", "kt08_tiny_text_to_phonemes"):
             self.assertIn(name + "(", h)
 
     def test_fetch_script_pins_data(self):
-        s = FETCH.read_text()
+        s = FETCH.read_text(encoding="utf-8")
         self.assertIn("COMMIT=59eb19938f12e30881c81d86ce4a7de25414c9f4", s)
         for f in ("es_rules", "es_list", "phsource/phonemes", "phsource/ph_spanish"):
             self.assertRegex(s, re.escape(f) + r" [0-9a-f]{64}")
@@ -54,7 +54,7 @@ class SourceTest(unittest.TestCase):
 
     def test_front_end_has_no_espeak_code(self):
         for p in FRONTEND.glob("*.cpp"):
-            text = p.read_text()
+            text = p.read_text(encoding="utf-8")
             self.assertIn("Apache License", text)
             self.assertNotIn("espeak_ng.h", text)
 

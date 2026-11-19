@@ -69,9 +69,13 @@ class SourceTests(unittest.TestCase):
 
     def test_no_espeak_data_or_code_in_the_repository(self):
         try:
-            files = subprocess.run(["git", "ls-files"], cwd=ROOT, capture_output=True, text=True, check=True).stdout.split()
+            files = subprocess.run(["git", "-c", "safe.directory=*", "ls-files"], cwd=ROOT, capture_output=True, text=True, check=True).stdout.split()
         except (OSError, subprocess.CalledProcessError):
-            files = [str(p.relative_to(ROOT)) for p in ROOT.rglob("*") if p.is_file()]
+            # No usable git (a container with another owner, a source archive): scan the files, leaving out virtual
+            # environments and other folders that are not part of the repository.
+            skip = {".git", "venv", ".venv", "node_modules", "build", ".hf-cache"}
+            files = [p.relative_to(ROOT).as_posix() for p in ROOT.rglob("*")
+                     if p.is_file() and not skip & set(p.relative_to(ROOT).parts)]
         data = [f for f in files if re.search(r"(^|/)[a-z]{2,3}_(rules|list|listx|extra|emoji|dict)$", f)]
         self.assertEqual(data, [], "espeak-ng data files must be downloaded by apps, not committed")
         for f in CEPH.iterdir():

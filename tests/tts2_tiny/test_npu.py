@@ -26,7 +26,7 @@ KT08_ERR_UNSUPPORTED = 6
 
 class HeaderTest(unittest.TestCase):
     def test_declares_npu_functions(self):
-        h = HEADER.read_text()
+        h = HEADER.read_text(encoding="utf-8")
         for name in ("kt08_npu_options_init", "kt08_npu_load", "kt08_npu_free", "kt08_npu_max_frames",
                      "kt08_synthesize_tiny_npu"):
             self.assertIn(name + "(", h)
@@ -81,12 +81,12 @@ class PrepareTest(unittest.TestCase):
         from kitten_inference.tts2_tiny import convert
         sys.path.insert(0, str(PREP.parent))
         import prepare_npu
-        cfg = json.loads(Path(REPO, "config.json").read_text())
+        cfg = json.loads(Path(REPO, "config.json").read_text(encoding="utf-8"))
         key = cfg["languages"]["en"]["model"]
         with tempfile.TemporaryDirectory() as d:
             conv = os.path.join(d, "conv")
             convert.convert_repo(REPO, conv, models=[key], int8=False)
-            arch = json.loads(Path(conv, f"{key}_fp32_arch.json").read_text())
+            arch = json.loads(Path(conv, f"{key}_fp32_arch.json").read_text(encoding="utf-8"))
             front, post, body = prepare_npu.split_graph(arch)
             names = [n["name"] for n in front["nodes"]] + [n["name"] for n in body] + [n["name"] for n in post["nodes"]]
             self.assertEqual(sorted(names), sorted(n["name"] for n in arch["nodes"]))

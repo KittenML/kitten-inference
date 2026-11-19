@@ -10,6 +10,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 if(MSVC)
     add_compile_definitions(__restrict__=__restrict)
+    # The C++ sources are UTF-8 and hold characters outside ASCII in string literals (for example the sentence ends
+    # … । 。 in src/stream/chunker.cpp). Without /utf-8 MSVC reads them in the Windows system code page and compiles
+    # other characters into the program. C++ only: nvcc does not take this flag for the CUDA sources.
+    add_compile_options($<$<COMPILE_LANGUAGE:CXX>:/utf-8>)
 endif()
 
 # ── CUDA backend (optional) ────────────────────────────────────

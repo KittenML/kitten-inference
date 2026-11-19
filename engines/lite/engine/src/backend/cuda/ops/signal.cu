@@ -9,6 +9,10 @@
 #include <cstdint>
 #include <cstring>
 
+#ifndef M_PI  // MSVC does not define it without _USE_MATH_DEFINES
+#define M_PI 3.14159265358979323846
+#endif
+
 // ── harmonic source ─────────────────────────────────────────────────────────────────────────────────────────────────
 // 1. v[h][i]: the linear downsampling (scale s) of rad = frac(f0 * (h + 1) / sr), one value per frame and harmonic.
 static __global__ void k_sine_rad_dn(const float* __restrict__ f0, int T, int T_dn, int H, float s, float sr,

@@ -54,7 +54,7 @@ STREAM_CHUNK_CHARS = 380
 
 
 def check_speed(speed):
-    from .._family import check_speed as _check   # one rule and wording for both small families
+    from ..tts08._family import check_speed as _check   # one rule and wording for both small families
     return _check("tts2_tiny", speed)
 # English text goes through spaCy, regex and addict, Japanese text (mini) through fugashi, jaconv and addict (the code of
 # misaki 0.9.4 and num2words 0.5.14 they use is vendored in frontend/). kitten-inference installs them on CPython 3.10 to
@@ -197,8 +197,8 @@ class KittenTTS2Tiny:
 
     def __init__(self, model="KittenML/kitten-tts-2-nano", backend=None, cache_dir=None, precision="fp32",
                  revision=None, low_memory=False):
-        # The same rules and messages as Kitten TTS 0.8 (kitten_inference/_family.py), before any download.
-        from .. import _family
+        # The same rules and messages as Kitten TTS 0.8 (kitten_inference/tts08/_family.py), before any download.
+        from ..tts08 import _family
         backend = _family.check_backend("tts2_tiny", backend)
         precision = _family.check_precision("tts2_tiny", precision) or "fp32"
         _family.check_gpu_rules("tts2_tiny", backend, precision, low_memory)
@@ -459,7 +459,7 @@ class KittenTTS2Tiny:
         silent start the same way, and a chunk that another follows keeps 30 ms of silence after its last audible
         sample."""
         speed = check_speed(speed)                 # before any work, also for empty text
-        from .. import _family, _stream
+        from ..tts08 import _family, _stream
         chunk_chars = _family.check_chunk_chars(chunk_chars)
         trim = _stream.check_trim_lead(trim_lead)
         lang, key = self.resolve_voice(voice, language)
@@ -476,7 +476,7 @@ class KittenTTS2Tiny:
 
     def stream_chunks(self, text, language=None, chunk_chars=None):
         """The text chunks stream() speaks for this text (before phonemes), the same on every machine."""
-        from .. import _family
+        from ..tts08 import _family
         lang = self.resolve_voice(None, language)[0]
         return self._text_chunks(text, lang, _family.check_chunk_chars(chunk_chars))[0]
 
@@ -500,7 +500,7 @@ class KittenTTS2Tiny:
         return chunks, g2p, fold
 
     def _stream_chunks(self, text, lang, key, speed, trim, chunk_chars):
-        from .. import _stream
+        from ..tts08 import _stream
         from .frontend import _LOCK, front_end
         st = self._mi.stream
         chunks, g2p, fold = self._text_chunks(text, lang, chunk_chars)

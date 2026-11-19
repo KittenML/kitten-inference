@@ -25,7 +25,7 @@ from pathlib import Path
 
 import numpy as np
 
-from kitten_inference import _family, _stream
+from kitten_inference.tts08 import _family, _stream
 
 LIB = os.environ.get("KITTEN_TTS08_CAPI_LIB")
 REPO = os.environ.get("KITTEN_TTS2_TINY_REPO")
@@ -194,7 +194,7 @@ class ChunkerTest(unittest.TestCase):
             sig = inspect.signature(cls.generate_stream).parameters
             self.assertEqual((sig["chunk_chars"].default, sig["trim_lead"].default), (None, True), cls)
             self.assertIsNone(inspect.signature(cls.stream_chunks).parameters["chunk_chars"].default, cls)
-        h = (Path(__file__).resolve().parents[1] / "engines/lite/engine/include/kitten_tts08.h").read_text()
+        h = (Path(__file__).resolve().parents[1] / "engines/lite/engine/include/kitten_tts08.h").read_text(encoding="utf-8")
         self.assertIn("#define KT08_STREAM_TINY_CHUNK_CHARS 380", h)
         self.assertNotIn("ONE_SENTENCE", h)
 
@@ -412,7 +412,7 @@ class CLibrarySameChunksTest(unittest.TestCase):
         lib = _clib()
         tts = KittenTTS2Tiny(REPO, backend="cpu")
         lang = tts.default_language
-        cfg = json.loads((Path(REPO) / "config.json").read_text())
+        cfg = json.loads((Path(REPO) / "config.json").read_text(encoding="utf-8"))
         tmp = tempfile.mkdtemp()
         try:
             g2p = Path(tmp) / "g2p"

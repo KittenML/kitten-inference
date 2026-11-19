@@ -120,7 +120,7 @@ def test_every_header_function_is_declared():
     if not HEADER.is_file():
         pytest.skip(f"engine.h not found at {HEADER}")
     import re
-    declared = set(re.findall(r"KT2N_API\s+[^;(]*?\b(kt2n_\w+)\s*\(", HEADER.read_text()))
+    declared = set(re.findall(r"KT2N_API\s+[^;(]*?\b(kt2n_\w+)\s*\(", HEADER.read_text(encoding="utf-8")))
     assert declared, "no KT2N_API functions found in the header"
     assert declared == set(_abi.PROTOTYPES), (declared ^ set(_abi.PROTOTYPES))
 

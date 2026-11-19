@@ -20,7 +20,7 @@ from kitten_inference.tts2_tiny import convert
 from kitten_inference.tts2_tiny.model import REPOS, REVISIONS, repo_id
 
 HERE = Path(__file__).resolve().parent
-ARCHS = json.loads((HERE / "arch_configs.json").read_text())
+ARCHS = json.loads((HERE / "arch_configs.json").read_text(encoding="utf-8"))
 REPO = os.environ.get("KITTEN_TTS2_TINY_REPO")
 
 
@@ -78,7 +78,7 @@ class FrontEndInstallTest(unittest.TestCase):
         pyproject = Path(__file__).resolve().parents[2] / "pyproject.toml"
         if not pyproject.is_file():
             self.skipTest("no pyproject.toml (installed tests)")
-        deps = [Requirement(r) for r in tomllib.loads(pyproject.read_text())["project"]["dependencies"]]
+        deps = [Requirement(r) for r in tomllib.loads(pyproject.read_text(encoding="utf-8"))["project"]["dependencies"]]
         from kitten_inference.tts2_tiny.model import FRONT_END_MODULES
         tiny = [r for r in deps if r.name in FRONT_END_MODULES]
         self.assertEqual(sorted(r.name for r in tiny), sorted(FRONT_END_MODULES))
@@ -248,7 +248,7 @@ class GraphTest(unittest.TestCase):
                 path = os.path.join(d, "x_fp32_arch.json")
                 Path(path).write_text(json.dumps(a))
                 tp, dp = split_for_metal(path)
-                text, dec = json.loads(Path(tp).read_text()), json.loads(Path(dp).read_text())
+                text, dec = json.loads(Path(tp).read_text(encoding="utf-8")), json.loads(Path(dp).read_text(encoding="utf-8"))
             # the CPU part ends after the F0 and energy predictor; every node that sets the frame counts or F0 is in it
             self.assertEqual(text["nodes"][-1]["name"], "dec_n_conv")
             self.assertTrue({"dur_sum", "len_reg_en", "len_reg_asr", "shared_lstm", "dec_f0_conv"}
@@ -346,7 +346,7 @@ class ConverterCommandTest(unittest.TestCase):
 
 def _present(repo):
     """The models (and their languages) whose weights file is in the folder (a partial download is fine)."""
-    cfg = json.loads(Path(repo, "config.json").read_text())
+    cfg = json.loads(Path(repo, "config.json").read_text(encoding="utf-8"))
     models = [k for k, e in cfg["models"].items() if Path(repo, e["safetensors"]).is_file()]
     langs = [l for l, e in cfg["languages"].items() if e["model"] in models and Path(repo, e["voices"]).is_file()]
     return models, langs
@@ -417,7 +417,7 @@ class RepoTest(unittest.TestCase):
         paths = split_for_metal(arch)
         with tts._cm._ENGINE_GATE.use(tts._mi, "cpu"):
             split = tuple(tts._mi.InferenceModel(p, weights) for p in paths)
-        dec_inputs = frozenset(i["name"] for i in json.loads(Path(paths[1]).read_text())["inputs"])
+        dec_inputs = frozenset(i["name"] for i in json.loads(Path(paths[1]).read_text(encoding="utf-8"))["inputs"])
         tts._sessions[tts.config["languages"][lang]["model"]] = split + (dec_inputs, "cpu")
         for speed in (1.0, 1.3):
             wav, dur = KittenTTS2Tiny(REPO, backend="cpu")._run(lang, tokens, style, speed)

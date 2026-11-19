@@ -28,8 +28,8 @@ class KittenTTS:
             self._model = KittenTTS2(backend=backend, cache_dir=cache_dir, **model_options)
             return
         # Kitten TTS 0.8 and Kitten TTS 2 mini/nano/pico: the same options and errors on every backend, checked
-        # before any download (kitten_inference/_family.py).
-        from . import _family
+        # before any download (kitten_inference/tts08/_family.py).
+        from .tts08 import _family
         _family.check_model_options(self.family, model_options)
         if self.family == 'tts2_tiny':
             from .tts2_tiny import KittenTTS2Tiny
@@ -70,7 +70,7 @@ class KittenTTS:
             # Without a language: every voice name once (mini gives several languages the same voices).
             return list(dict.fromkeys(v['name'] for v in m.voices(language)))
         if self.family == 'tts08':
-            from ._family import check_language, NAMES
+            from .tts08._family import check_language, NAMES
             check_language(NAMES['tts08'], language, ['en'])
             return list(m.available_voices)
         if language is not None:
@@ -87,7 +87,7 @@ class KittenTTS:
             return opts
         # Kitten TTS 0.8 and Kitten TTS 2 mini/nano/pico accept the same synthesis options on every backend and
         # check them before synthesis starts (also for stream(), on its first chunk), in one wording.
-        from . import _family
+        from .tts08 import _family
         _family.check_synth_options(self.family, opts)
         if 'speed' in opts:
             opts['speed'] = _family.check_speed(self.family, opts['speed'])
@@ -115,7 +115,7 @@ class KittenTTS:
         # trim_lead (default True: the first chunk starts at its first audible sample), checked here in one wording.
         stream_opts = {}
         if self.family != 'tts2':
-            from . import _family, _stream
+            from .tts08 import _family, _stream
             for key in ('chunk_chars', 'trim_lead'):
                 if key in options:
                     stream_opts[key] = options.pop(key)

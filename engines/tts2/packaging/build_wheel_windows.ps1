@@ -11,7 +11,7 @@ param(
   [string]$Out = "",
   [int]$Jobs = 0,
   [string]$Version = "",  # default: the engine version (make_wheel.py)
-  [string]$ExtraLib = ""  # kt08_cuda.dll (engines\tts08\cuda-library\build_windows.ps1), added to lib/
+  [string]$ExtraLib = ""  # kt08_cuda.dll (engines\lite\cuda-library\build_windows.ps1), added to lib/
 )
 $ErrorActionPreference = "Stop"
 $Src = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path

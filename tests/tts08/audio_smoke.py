@@ -58,7 +58,8 @@ SPEED_CASES = [
     },
 ]
 # micro and mini have wider layers than nano (for example a 256-wide LSTM instead of 64): run each once.
-# nano int8 is here too, so that every int8 model runs on Metal when the backend is set to metal.
+# int8 models run on the CPU only: a GPU backend raises ValueError for them (see _family.check_gpu_rules), so the
+# models mode leaves them out when the backend is metal or cuda, and the comparison covers the fp32 models only.
 MODEL_CASES = [
     {"model": "KittenML/kitten-tts-nano-0.8-int8", "voice": "Luna", "speed": 1.0, "filename": "nano-int8-luna.wav"},
     {"model": "KittenML/kitten-tts-mini-0.8", "voice": "Jasper", "speed": 1.0, "filename": "mini-jasper.wav"},
@@ -146,6 +147,8 @@ def compare(results, other_dir):
     summary = json.loads((Path(other_dir) / "summary.json").read_text(encoding="utf-8"))
     other = {Path(r["path"]).name: r for r in summary}
     for r in results:
+        if Path(r["path"]).name not in other:  # int8 models run on the CPU only; the GPU run has no file for them
+            continue
         o = other[Path(r["path"]).name]
         label = f"{Path(r['path']).name}: {r['active_backend']} vs {o['active_backend']}"
         r["samples_vs_other_pct"] = round(100.0 * (r["samples"] - o["samples"]) / o["samples"], 2)
@@ -508,7 +511,9 @@ def main():
     if args.mode == "quick":
         results.append(synthesize(model_cache, out_dir, cache_dir, QUICK_CASE, args.backend))
     elif args.mode == "models":
-        results.extend(synthesize(model_cache, out_dir, cache_dir, case, args.backend) for case in MODEL_CASES)
+        gpu = args.backend in ("metal", "cuda")
+        results.extend(synthesize(model_cache, out_dir, cache_dir, case, args.backend)
+                       for case in MODEL_CASES if not (gpu and case["model"].endswith("-int8")))
     elif args.mode == "paths":
         results.extend(unicode_path_check(cache_dir, args.backend))
     elif args.mode == "mix":

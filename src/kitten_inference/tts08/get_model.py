@@ -116,9 +116,9 @@ class KittenTTS:
                 memory is freed after each call), at some cost in speed.
 
         Backend, precision and low_memory are checked before any download, with the same rules and messages as Kitten
-        TTS 2 mini, nano and pico (kitten_inference/_family.py).
+        TTS 2 mini, nano and pico (kitten_inference/tts08/_family.py).
         """
-        from .. import _family
+        from . import _family
         backend = _family.check_backend("tts08", backend)
         precision = _family.check_precision("tts08", precision)
         repo_id = _with_precision(_resolve_model_id(model_name), precision)
@@ -359,7 +359,7 @@ def download_from_huggingface(repo_id=DEFAULT_MODEL, cache_dir=None, backend=Non
     )
     
     # Load config
-    with open(config_path, 'r') as f:
+    with open(config_path, 'r', encoding='utf-8') as f:
         config = json.load(f)
 
     return _instantiate_native_model(

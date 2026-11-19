@@ -27,6 +27,17 @@ class EngineTests(unittest.TestCase):
         for name in ("forward", "set_speed", "speed"):
             self.assertTrue(hasattr(_engine.InferenceModel, name), name)
 
+    def test_stream_sentence_ends_outside_ascii(self):
+        # The sentence ends stream() cuts at (… । 。 ！ ？) are written in the engine's C++ source as UTF-8. A build that
+        # reads the source in another encoding (MSVC without /utf-8) cuts at other characters, such as the ã of São.
+        from kitten_inference.tts08 import _engine
+
+        split = _engine.stream.split_sentences
+        self.assertEqual(split("Wait… what? Yes."), ["Wait…", "what?", "Yes."])
+        self.assertEqual(split("São Paulo costs €5, voilà tout. Naïve?"), ["São Paulo costs €5, voilà tout.", "Naïve?"])
+        self.assertEqual(split("ア。イ！ウ？エ"), ["ア。", "イ！", "ウ？", "エ"])
+        self.assertEqual(split("यह है। वह है।"), ["यह है।", "वह है।"])
+
     def test_loading_the_engine_prints_no_metal_lines(self):
         # The Metal backend's start-up lines (metallib path, device) are opt-in with KITTEN_TTS08_VERBOSE=1.
         import subprocess

@@ -41,7 +41,7 @@ SENTENCES = [
 
 class SourceTest(unittest.TestCase):
     def test_header(self):
-        h = HEADER.read_text()
+        h = HEADER.read_text(encoding="utf-8")
         self.assertGreaterEqual(int(re.search(r"#define KT08_API_VERSION (\d+)", h).group(1)), 5)  # 5: this API; later versions add to it
         for name in NEW:
             self.assertIn(name + "(", h)
@@ -53,7 +53,7 @@ class SourceTest(unittest.TestCase):
 
     def test_no_new_dependencies(self):
         for p in SRC.glob("*.[ch]pp"):
-            for line in p.read_text().splitlines():
+            for line in p.read_text(encoding="utf-8").splitlines():
                 if line.startswith("#include <"):
                     inc = line.split("<")[1].split(">")[0]
                     self.assertNotIn("/", inc, f"{p.name}: {line}")   # standard headers only
@@ -79,7 +79,7 @@ class LibraryTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.lib = _lib()
-        cfg = json.loads((Path(REPO) / "config.json").read_text())
+        cfg = json.loads((Path(REPO) / "config.json").read_text(encoding="utf-8"))
         cls.phon = cfg.get("phonemizer", "v1")
         cls.tmp = tempfile.mkdtemp()
         g2p = Path(cls.tmp) / "g2p"
@@ -92,7 +92,7 @@ class LibraryTest(unittest.TestCase):
                                              cls.g2p.encode(), None, ctypes.byref(cls.fe))
         assert rc == 0, cls.lib.kt08_last_error()
         from kitten_inference.tts2_tiny.frontend import Frontend
-        cls.py = Frontend(cls.phon, json.loads((Path(REPO) / "vocab.json").read_text()), str(Path(REPO) / "g2p"))
+        cls.py = Frontend(cls.phon, json.loads((Path(REPO) / "vocab.json").read_text(encoding="utf-8")), str(Path(REPO) / "g2p"))
 
     @classmethod
     def tearDownClass(cls):

@@ -27,7 +27,7 @@ NEW = ("kt08_vocab_load", "kt08_vocab_free", "kt08_vocab_ids", "kt08_style_row_f
 
 class HeaderTest(unittest.TestCase):
     def test_declares_tiny_functions(self):
-        h = HEADER.read_text()
+        h = HEADER.read_text(encoding="utf-8")
         self.assertIn("#define KT08_API_VERSION 6", h)   # 6: streaming
         for name in NEW:
             self.assertIn(name + "(", h)

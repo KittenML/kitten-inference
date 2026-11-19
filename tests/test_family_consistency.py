@@ -19,7 +19,8 @@ import re
 import numpy as np
 import pytest
 
-from kitten_inference import KittenTTS, _family
+from kitten_inference import KittenTTS
+from kitten_inference.tts08 import _family
 
 MODELS = {'tts08': 'KittenML/kitten-tts-nano-0.8', 'tts2_tiny': 'KittenML/kitten-tts-2-pico'}
 FAMILIES = sorted(MODELS)

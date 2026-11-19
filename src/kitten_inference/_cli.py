@@ -43,7 +43,7 @@ def main(argv=None):
     cpu.add_argument('--voice')
     cpu.add_argument('--output', type=Path)
     # The same options for Kitten TTS 0.8 and Kitten TTS 2 mini, nano and pico; a setting a model cannot use is
-    # refused with the same message as in Python (kitten_inference/_family.py), not by argparse.
+    # refused with the same message as in Python (kitten_inference/tts08/_family.py), not by argparse.
     # backend 'cuda': Kitten TTS 2 mini, nano and pico on NVIDIA GPUs (Linux x86-64, Windows x64)
     cpu.add_argument('--backend', choices=['cpu', 'metal', 'cuda'])
     cpu.add_argument('--cache-dir')

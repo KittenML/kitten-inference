@@ -572,7 +572,7 @@ class KittenTTS_1_Cpp:
             if target in self.available_voices
         ] or self.available_voices
 
-        from .. import _family
+        from . import _family
         backend = _family.check_backend("tts08", backend)
         graph_precision = "int8" if _has_int8_layers(arch_path) else "fp32"
         if precision is not None and precision != graph_precision:
@@ -684,7 +684,7 @@ class KittenTTS_1_Cpp:
         keep their lead, which is the pause between sentences. With chunk_chars=None the stream's audio is generate()'s,
         chunk by chunk, apart from that trim.
         """
-        from .. import _family, _stream
+        from . import _family, _stream
         chunk_chars = _family.check_chunk_chars(chunk_chars)
         trim = _stream.check_trim_lead(trim_lead)
         if clean_text:
@@ -709,7 +709,7 @@ class KittenTTS_1_Cpp:
 
     def stream_chunks(self, text, clean_text=True, chunk_chars=None):
         """The text chunks stream() speaks for this text (before phonemes), the same on every machine."""
-        from .. import _family
+        from . import _family
         chunk_chars = _family.check_chunk_chars(chunk_chars)
         st = self._mi.stream
         return st.pack_sentences(chunk_text(self.preprocessor(text) if clean_text else text),

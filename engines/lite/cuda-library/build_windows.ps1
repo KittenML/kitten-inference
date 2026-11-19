@@ -1,7 +1,7 @@
 # Build the NVIDIA GPU library of Kitten TTS 2 mini, nano and pico for Windows (kt08_cuda.dll: the engine with its CUDA
 # backend, the CUDA 12.8 runtime and the C runtime linked in statically, no cuBLAS), shipped in the Kitten TTS 2 CUDA
 # payload wheel (kitten_inference/_tts2_cuda/lib/) by engines/tts2/packaging/build_wheel_windows.ps1 -ExtraLib.
-#   powershell -File engines\tts08\cuda-library\build_windows.ps1 [-Out DIR] [-Jobs N]
+#   powershell -File engines\lite\cuda-library\build_windows.ps1 [-Out DIR] [-Jobs N]
 # Run it from a Visual Studio 2022 x64 developer environment with CUDA 12.8 (CUDA_PATH), CMake and Ninja on PATH, as
 # the Kitten TTS 2 engine build. The DLL must import only Windows system DLLs (the driver's nvcuda.dll is loaded at run
 # time), so it runs on a Windows with only the NVIDIA driver.
@@ -12,17 +12,17 @@ param(
 )
 $ErrorActionPreference = "Stop"
 $Root = (Resolve-Path (Join-Path $PSScriptRoot "..\..\..")).Path
-if (-not $Out) { $Out = Join-Path $Root "engines\tts08\dist" }
+if (-not $Out) { $Out = Join-Path $Root "engines\lite\dist" }
 if ($Jobs -le 0) { $Jobs = [Environment]::ProcessorCount }
 New-Item -ItemType Directory -Force -Path $Out | Out-Null
 function Run([string]$exe, [string[]]$argv) {
   & $exe @argv
   if ($LASTEXITCODE -ne 0) { throw "$exe $($argv -join ' ') failed with exit code $LASTEXITCODE" }
 }
-$Build = Join-Path $Root "engines\tts08\build\cuda-library-windows"
+$Build = Join-Path $Root "engines\lite\build\cuda-library-windows"
 $Stage = "$Build-stage"
 foreach ($d in @($Build, $Stage)) { if (Test-Path $d) { Remove-Item -Recurse -Force $d } }
-Run "cmake" @("-S", (Join-Path $Root "engines\tts08\engine"), "-B", $Build, "-G", "Ninja", "-DCMAKE_BUILD_TYPE=Release",
+Run "cmake" @("-S", (Join-Path $Root "engines\lite\engine"), "-B", $Build, "-G", "Ninja", "-DCMAKE_BUILD_TYPE=Release",
               "-DCMAKE_C_COMPILER=cl", "-DCMAKE_CXX_COMPILER=cl", "-DENABLE_CUDA=ON", "-DKITTEN_BUILD_CUDA_LIBRARY=ON",
               "-DCMAKE_CUDA_ARCHITECTURES=$Archs", "-DKITTEN_BUILD_PYTHON_MODULE=OFF", "-DENABLE_NATIVE_ARCH=OFF",
               "-DENABLE_X86_AVX2=ON", "-DENABLE_ARM_DOTPROD=OFF", "-DENABLE_OPENMP=OFF", "-DKITTEN_BUILD_EXTRAS=OFF")
