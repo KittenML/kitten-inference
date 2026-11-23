@@ -4,7 +4,7 @@ from pathlib import Path
 from ._deps import require as _require
 _require()  # before the imports below, so one message names every missing package
 from huggingface_hub import hf_hub_download
-from .cpp_model import KittenTTS_1_Cpp
+from .cpp_model import KittenTTS_1_Cpp, check_metal
 from .preprocess import normalize_text
 
 
@@ -98,7 +98,7 @@ BUILTIN_NATIVE_MODELS = {
 class KittenTTS:
     """Main KittenTTS class for text-to-speech synthesis."""
     
-    def __init__(self, model_name=DEFAULT_MODEL, cache_dir=None, backend=None):
+    def __init__(self, model_name=DEFAULT_MODEL, cache_dir=None, backend=None, precision=None, low_memory=False):
         """Initialize KittenTTS with a native model.
         
         Args:
@@ -107,10 +107,37 @@ class KittenTTS:
             cache_dir: Directory to cache downloaded files
             backend: ``"cpu"`` or ``"metal"``. Defaults to Metal on Apple
                 Silicon when a Metal device is available, except for int8
-                models, and to the CPU otherwise.
+                models and low_memory, and to the CPU otherwise.
+            precision: ``"fp32"`` or ``"int8"``; default: the model name's
+                (``kitten-tts-mini-0.8`` is fp32, ``kitten-tts-mini-0.8-int8``
+                int8). ``precision="int8"`` with ``kitten-tts-mini-0.8`` loads
+                ``kitten-tts-mini-0.8-int8``.
+            low_memory: ``True`` uses the least memory (the CPU only; working
+                memory is freed after each call), at some cost in speed.
+
+        Backend, precision and low_memory are checked before any download, with the same rules and messages as Kitten
+        TTS 2 mini, nano and pico (kitten_inference/tts08/_family.py).
         """
-        repo_id = _resolve_model_id(model_name)
-        self.model = download_from_huggingface(repo_id=repo_id, cache_dir=cache_dir, backend=backend)
+        from . import _family
+        backend = _family.check_backend("tts08", backend)
+        precision = _family.check_precision("tts08", precision)
+        repo_id = _with_precision(_resolve_model_id(model_name), precision)
+        spec = None if os.path.isdir(repo_id) else _builtin_native_spec(repo_id)
+        # A built-in model's precision is known from its name; others are checked once their graph is read.
+        known = precision or (spec and ("int8" if "int8" in spec["arch_file"] else "fp32"))
+        _family.check_gpu_rules("tts08", backend, known, low_memory)
+        if backend == "metal":
+            check_metal()   # before the download, as for Kitten TTS 2 mini, nano and pico
+        self.model = download_from_huggingface(repo_id=repo_id, cache_dir=cache_dir, backend=backend,
+                                               precision=precision, low_memory=low_memory)
+
+    @property
+    def default_voice_name(self):
+        """The default voice as list_voices() names it (Leo for the built-in models)."""
+        target = DEFAULT_VOICE_ALIASES["Leo"]
+        if self.model.voice_aliases.get("Leo") == target and "Leo" in self.model.all_voice_names:
+            return "Leo"
+        return target
     
     def normalize_text(self, text, locale="en-US", return_spans=False):
         """Normalize text for TTS without generating audio."""
@@ -129,13 +156,19 @@ class KittenTTS:
         """
         return self.model.generate(text, voice=voice, speed=speed, clean_text=clean_text)
 
-    def generate_stream(self, text, voice="expr-voice-5-m", speed=1.0, clean_text=False):
-        """Generate audio as a stream of chunks.
+    def generate_stream(self, text, voice="expr-voice-5-m", speed=1.0, clean_text=False, trim_lead=True,
+                        chunk_chars=None):
+        """Generate audio as a stream of chunks (chunk_chars None, the default: one sentence per chunk; N packs whole
+        sentences into chunks of at most N characters, at most 400).
+
+        trim_lead (default True): the first chunk starts at its first audible sample (less 20 ms), not after the
+        model's ~0.4 s of silence; every kept sample is unchanged.
 
         Yields:
             numpy.ndarray: Audio data for each text chunk.
         """
-        yield from self.model.generate_stream(text, voice=voice, speed=speed, clean_text=clean_text)
+        yield from self.model.generate_stream(text, voice=voice, speed=speed, clean_text=clean_text,
+                                              trim_lead=trim_lead, chunk_chars=chunk_chars)
 
     def generate_to_file(
         self,
@@ -194,6 +227,25 @@ def _resolve_model_id(model_name):
     return model_name
 
 
+def _with_precision(repo_id, precision):
+    """The built-in model of the requested precision: kitten-tts-mini-0.8 + "int8" -> kitten-tts-mini-0.8-int8.
+    A name that already says its precision must agree with precision=."""
+    if precision is None or os.path.isdir(repo_id) or _builtin_native_spec(repo_id) is None:
+        return repo_id
+    spec = _builtin_native_spec(repo_id)
+    current = "int8" if "int8" in spec["arch_file"] else "fp32"
+    if current == precision:
+        return repo_id
+    name = repo_id.lower()
+    if name.endswith(("-int8", "-fp32")):
+        raise ValueError(f"{repo_id!r} is the {current} model: leave out precision, or use the model name without "
+                         f"'-{current}' and precision={precision!r}")
+    other = repo_id + "-int8" if precision == "int8" else None
+    if other is None or _builtin_native_spec(other) is None:
+        raise ValueError(f"{repo_id!r} has no {precision} version")
+    return other
+
+
 def _config_file(config, primary, *fallbacks):
     for key in (primary,) + fallbacks:
         value = config.get(key)
@@ -202,7 +254,7 @@ def _config_file(config, primary, *fallbacks):
     raise ValueError(f"Native KittenTTS config is missing required field {primary!r}.")
 
 
-def _load_local_model(repo_dir, backend=None):
+def _load_local_model(repo_dir, backend=None, **model_options):
     config_path = os.path.join(repo_dir, "config.json")
     with open(config_path, "r", encoding="utf-8") as f:
         config = json.load(f)
@@ -210,10 +262,11 @@ def _load_local_model(repo_dir, backend=None):
         config=config,
         get_file=lambda filename: _resolve_local_file(repo_dir, filename),
         backend=backend,
+        **model_options,
     )
 
 
-def _load_builtin_native_model(repo_id, spec, cache_dir=None, backend=None):
+def _load_builtin_native_model(repo_id, spec, cache_dir=None, backend=None, **model_options):
     voice_paths = {
         voice: _download_file(
             NATIVE_WEIGHTS_REPO,
@@ -235,10 +288,11 @@ def _load_builtin_native_model(repo_id, spec, cache_dir=None, backend=None):
         backend=backend,
         style_index="text_length",  # the reference ONNX path picks the style row by text length
         sample_rate=24000,
+        **model_options,
     )
 
 
-def _instantiate_native_model(config, get_file, backend=None):
+def _instantiate_native_model(config, get_file, backend=None, **model_options):
     config_type = config.get("type")
     if config_type not in NATIVE_CONFIG_TYPES:
         if config_type in {"ONNX1", "ONNX2"}:
@@ -270,10 +324,11 @@ def _instantiate_native_model(config, get_file, backend=None):
         backend=backend,
         style_index=config.get("style_index", "token_count"),
         sample_rate=config.get("sample_rate", 24000),
+        **model_options,
     )
 
 
-def download_from_huggingface(repo_id=DEFAULT_MODEL, cache_dir=None, backend=None):
+def download_from_huggingface(repo_id=DEFAULT_MODEL, cache_dir=None, backend=None, **model_options):
     """Download model files from Hugging Face repository.
     
     Args:
@@ -284,7 +339,7 @@ def download_from_huggingface(repo_id=DEFAULT_MODEL, cache_dir=None, backend=Non
         KittenTTS_1_Cpp: Instantiated model ready for use
     """
     if os.path.isdir(repo_id):
-        return _load_local_model(repo_id, backend=backend)
+        return _load_local_model(repo_id, backend=backend, **model_options)
 
     builtin_spec = _builtin_native_spec(repo_id)
     if builtin_spec is not None:
@@ -293,6 +348,7 @@ def download_from_huggingface(repo_id=DEFAULT_MODEL, cache_dir=None, backend=Non
             spec=builtin_spec,
             cache_dir=cache_dir,
             backend=backend,
+            **model_options,
         )
 
     # Download config file first
@@ -303,13 +359,14 @@ def download_from_huggingface(repo_id=DEFAULT_MODEL, cache_dir=None, backend=Non
     )
     
     # Load config
-    with open(config_path, 'r') as f:
+    with open(config_path, 'r', encoding='utf-8') as f:
         config = json.load(f)
 
     return _instantiate_native_model(
         config=config,
         get_file=lambda filename: _download_file(repo_id, filename, cache_dir),
         backend=backend,
+        **model_options,
     )
 
 

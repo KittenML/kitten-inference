@@ -202,12 +202,14 @@ class Check:
 
     def licence_sources(self) -> dict:
         """dist-info/licenses/<path> -> source path."""
-        out = {p: p for p in ("LICENSE", "NOTICE", "engines/tts08/NOTICE", "engines/tts2/NOTICE")}
-        for folder in ("engines/tts08/licenses", "engines/tts2/licenses"):
+        out = {p: p for p in ("LICENSE", "NOTICE", "engines/lite/NOTICE", "engines/tts2/NOTICE",
+                               "src/kitten_inference/tts2_tiny/frontend/NOTICE")}
+        for folder in ("engines/lite/licenses", "engines/tts2/licenses"):
             out.update({p: p for p in self.tree.files(folder)})
         out["engines/tts2/licenses/lgpl-source/atempo.cc"] = "engines/tts2/src/post/atempo.cc"
         out["engines/tts2/licenses/lgpl-source/atempo.h"] = "engines/tts2/include/kt2n/post/atempo.h"
-        return {p.replace("engines/tts08/", "tts-0.8/").replace("engines/tts2/", "tts-2/"): value for p, value in out.items()}
+        return {p.replace("engines/lite/", "tts-0.8/").replace("engines/tts2/", "tts-2/")
+                .replace("src/kitten_inference/tts2_tiny/frontend/", "tts-2-tiny/"): value for p, value in out.items()}
 
     def tts2_sources(self) -> dict:
         """kitten_inference/tts2/<path> -> source path (the Python files of the TTS 2 engine)."""
@@ -372,7 +374,7 @@ class Check:
         for n in sorted(have_tts08):
             if n in overlay:
                 if data[n] != self.tree.read(f"src/{n}"):
-                    self.fail(f"{name}: overlay file {n} differs from engines/tts08/{n}")
+                    self.fail(f"{name}: overlay file {n} differs from engines/lite/{n}")
                 continue
             if n not in w_rows or rows.get(n, [[]])[0] != w_rows[n] or attrs[n] != w_attrs.get(n):
                 self.fail(f"{name}: {n} differs from {w_file} (RECORD row or zip attributes)")
@@ -384,7 +386,7 @@ class Check:
                 if n.endswith("/tts08/__init__.py"):
                     text = DELVEWHEEL_BLOCK.sub(b"", text, count=1)
                 if src is not None and text != src:
-                    self.fail(f"{name}: {n} differs from engines/tts08/{n} (CRLF and the delvewheel block aside)")
+                    self.fail(f"{name}: {n} differs from engines/lite/{n} (CRLF and the delvewheel block aside)")
         for p in self.tree.files("src/kitten_inference/tts08"):
             if p[len("src/"):] not in data:
                 self.fail(f"{name}: {p[len('src/'):]} (in the source) is missing")

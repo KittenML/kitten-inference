@@ -46,10 +46,11 @@ SOURCE = {
     "pyproject.toml": ROOT_PROJECT.encode(),
     "LICENSE": b"Apache License 2.0 (stand-in)\n",
     "NOTICE": b"kitten-inference notices (stand-in)\n",
-    "engines/tts08/NOTICE": b"TTS 0.8 bundles libgomp (GCC runtime), msvcp140 (MSVC) and libc++_shared (LLVM).\n",
-    "engines/tts08/licenses/GPL-3.0.txt": b"GPL 3 (stand-in)\n",
-    "engines/tts08/licenses/pybind11.txt": b"pybind11 (stand-in)\n",
+    "engines/lite/NOTICE": b"TTS 0.8 bundles libgomp (GCC runtime), msvcp140 (MSVC) and libc++_shared (LLVM).\n",
+    "engines/lite/licenses/GPL-3.0.txt": b"GPL 3 (stand-in)\n",
+    "engines/lite/licenses/pybind11.txt": b"pybind11 (stand-in)\n",
     "engines/tts2/NOTICE": b"TTS 2 notices (stand-in)\n",
+    "src/kitten_inference/tts2_tiny/frontend/NOTICE": b"Kitten TTS 2 mini/nano/pico front end notice (stand-in)\n",
     "engines/tts2/licenses/Apache-2.0.txt": b"Apache 2.0 (stand-in)\n",
     "engines/tts2/licenses/rocm/HIP.txt": b"HIP (stand-in)\n",
     "engines/tts2/src/post/atempo.cc": b"// atempo (LGPL) stand-in\n",
@@ -59,7 +60,7 @@ SOURCE = {
     "engines/tts2/CMakeLists.txt": b"project(kt2n)\n",
     "engines/tts2/cmake/flags.cmake": b"# flags\n",
     "engines/tts2/CMakePresets.json": b"{}\n",
-    "engines/tts08/engine/engine.cpp": b"// tts08 engine\n",
+    "engines/lite/engine/engine.cpp": b"// tts08 engine\n",
     "src/kitten_inference/tts08/__init__.py": b'"""Kitten TTS 0.8."""\nfrom .preprocess import x\n',
     "src/kitten_inference/tts08/preprocess.py": b"x = 1\n",
     "src/kitten_inference/tts08/model_defs/a.json": b'{"a": 1}\n',
@@ -158,7 +159,7 @@ class World:
         files.update({f"src/{p}": data for p, data in TESTED.items()})
         self.tested_commit = self.commit(files, "tested")
         self.release_commit = self.commit({f"src/{p}": data for p, data in RELEASE.items()}, "release")
-        self.licences = {p: d for p, d in files.items() if p.startswith(("engines/tts08/licenses/", "engines/tts2/licenses/"))}
+        self.licences = {p: d for p, d in files.items() if p.startswith(("engines/lite/licenses/", "engines/tts2/licenses/"))}
         for py, plat, _ in TTS08:
             self.add(self.inputs, *self.tts08(py, plat))
         for part in PAYLOADS:
@@ -242,7 +243,7 @@ class World:
             M(f"{info}/WHEEL", ("Wheel-Version: 1.0\nGenerator: stub\nRoot-Is-Purelib: false\n"
                                 + "".join(f"Tag: {t}\n" for t in tags)).encode(), mode(0o664), system),
             M(f"{info}/licenses/LICENSE", crlf(SOURCE["LICENSE"]), mode(0o664), system),
-            M(f"{info}/licenses/NOTICE", crlf(SOURCE["engines/tts08/NOTICE"]), mode(0o664), system),
+            M(f"{info}/licenses/NOTICE", crlf(SOURCE["engines/lite/NOTICE"]), mode(0o664), system),
         ]
         if linux:
             members.append(M(f"{info}/sboms/auditwheel.cdx.json", b'{"bomFormat": "CycloneDX"}'))

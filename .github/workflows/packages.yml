@@ -36,12 +36,12 @@ on:
       - "engines/tts2/packaging/smoke_wheel.py"
       - "engines/tts2/packaging/check_wheel_rocm.py"
       - "engines/tts2/packaging/size_check.py"
-      - "engines/tts08/engine/**"
-      - "engines/tts08/CMakeLists.txt"
-      - "engines/tts08/pyproject.toml"
+      - "engines/lite/engine/**"
+      - "engines/lite/CMakeLists.txt"
+      - "engines/lite/pyproject.toml"
       - "tests/tts08/**"
-      - "engines/tts08/NOTICE"
-      - "engines/tts08/licenses/**"
+      - "engines/lite/NOTICE"
+      - "engines/lite/licenses/**"
       - "NOTICE"
       - "LICENSE"
       - ".github/release-inputs.json"
@@ -68,12 +68,12 @@ on:
       - "engines/tts2/packaging/smoke_wheel.py"
       - "engines/tts2/packaging/check_wheel_rocm.py"
       - "engines/tts2/packaging/size_check.py"
-      - "engines/tts08/engine/**"
-      - "engines/tts08/CMakeLists.txt"
-      - "engines/tts08/pyproject.toml"
+      - "engines/lite/engine/**"
+      - "engines/lite/CMakeLists.txt"
+      - "engines/lite/pyproject.toml"
       - "tests/tts08/**"
-      - "engines/tts08/NOTICE"
-      - "engines/tts08/licenses/**"
+      - "engines/lite/NOTICE"
+      - "engines/lite/licenses/**"
       - "NOTICE"
       - "LICENSE"
       - ".github/release-inputs.json"
@@ -294,7 +294,7 @@ jobs:
         with:
           name: dist
           path: dist
-      - name: TTS 0.8 wheels (the artifacts of the engines/tts08 run in the lock)
+      - name: TTS 0.8 wheels (the artifacts of the engines/lite run in the lock)
         uses: actions/download-artifact@v4
         with:
           pattern: ${{ needs.lock.outputs.tts08_artifacts }}
@@ -407,9 +407,9 @@ jobs:
             python: "3.9"
           - os: ubuntu-24.04-arm
             python: "3.12"
-          - os: macos-14
+          - os: macos-15
             python: "3.9"
-          - os: macos-14
+          - os: macos-15
             python: "3.12"
           - os: macos-15-intel
             python: "3.12"
@@ -543,6 +543,7 @@ jobs:
         shell: bash
         run: |
           "$PY" -m unittest discover -s tests/tts08 -v
+          "$PY" -m unittest discover -s tests/tts2_tiny -v
           backend=cpu
           if [ "$FAMILY" = macos-arm64 ]; then backend=auto; fi
           "$PY" tests/tts08/audio_smoke.py --mode release --out-dir audio-smoke --cache-dir .hf-cache \
@@ -652,7 +653,12 @@ jobs:
         run: |
           cd "$RUNNER_TEMP"
           "$GITHUB_WORKSPACE/$PY" -m pytest -q -rs -p no:cacheprovider "$GITHUB_WORKSPACE/tests/packaging" \
-            "$GITHUB_WORKSPACE/tests/tts2" "$GITHUB_WORKSPACE/tests/tts08" "$GITHUB_WORKSPACE/tests/test_unified.py"
+            "$GITHUB_WORKSPACE/tests/tts2" "$GITHUB_WORKSPACE/tests/tts08" "$GITHUB_WORKSPACE/tests/test_unified.py" \
+            "$GITHUB_WORKSPACE/tests/test_stream_chunks.py" "$GITHUB_WORKSPACE/tests/test_family_consistency.py"
+      - name: Kitten TTS 2 mini, nano and pico tests on the package built from source
+        shell: bash
+        run: |
+          "$PY" -m unittest discover -s tests/tts2_tiny -v
 
   engines:
     # The cp312 wheel on runners without a GPU: the engines load through kitten_inference.tts2, their

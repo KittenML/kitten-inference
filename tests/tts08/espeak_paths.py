@@ -5,7 +5,7 @@ with pip, and runs KittenTTS().generate() in a new Python process.
     espeak_paths.py deep|names --wheels DIR --expect fixed|broken [--spec REQ] [--overlay PKG_DIR] [--out FILE.json]
 
 --spec is what pip installs, from --wheels plus the index for its dependencies: kitten-inference-tts08 (the default,
-the TTS 0.8 build in engines/tts08.yml) or "kitten-inference" (the released wheels, packages.yml). The installed
+the TTS 0.8 build in engines/lite.yml) or "kitten-inference" (the released wheels, packages.yml). The installed
 version must be one of the wheels in --wheels.
 --expect fixed: every case must speak (where Windows can load the engine at all; past that, the error must say the
 path is too long). --expect broken: the cases must fail the way the old wheels do (espeak-ng ends the process after

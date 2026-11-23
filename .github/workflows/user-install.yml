@@ -20,7 +20,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, ubuntu-24.04-arm, windows-2022, windows-11-arm, macos-14, macos-15-intel]
+        os: [ubuntu-24.04, ubuntu-24.04-arm, windows-2022, windows-11-arm, macos-15, macos-15-intel]
         python: ['3.11', '3.14']
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
@@ -55,6 +55,31 @@ jobs:
           python -m pip freeze > installed.txt
           python "$GITHUB_WORKSPACE/tests/user_install.py" --model KittenML/kitten-tts-nano-0.8 --project "$TEST_PROJECT" --version "$TEST_VERSION" --out evidence
           python "$GITHUB_WORKSPACE/tests/user_install.py" --model KittenML/kitten-tts-mini-0.8-int8 --project "$TEST_PROJECT" --version "$TEST_VERSION" --out evidence-int8
+      - name: Kitten TTS 2 mini, nano and pico README block
+        shell: bash
+        run: python tests/docs_commands.py --family tts2_tiny --project "$TEST_PROJECT" --version "$TEST_VERSION" --out "$RUNNER_TEMP/kitten-user-tiny"
+      - name: Kitten TTS 2 mini in English and Japanese (Japanese gives the documented error on Windows on Arm)
+        if: matrix.python == '3.14'
+        shell: bash
+        run: |
+          cd "$RUNNER_TEMP/kitten-user"
+          if [ -f .venv/Scripts/activate ]; then . .venv/Scripts/activate; else . .venv/bin/activate; fi
+          python - <<'PY'
+          import platform
+          from kitten_inference import KittenTTS
+          tts = KittenTTS('KittenML/kitten-tts-2-mini')
+          assert len(tts.generate('Hello from Kitten TTS 2.')) > 0
+          woa = platform.system() == 'Windows' and platform.machine().upper() == 'ARM64'
+          try:
+              audio = tts.generate('おはようございます。', language='ja')
+          except ImportError as e:
+              if not woa:
+                  raise
+              assert 'not supported on Windows on Arm' in str(e), e
+          else:
+              assert not woa, 'Japanese on Windows on Arm must raise the documented ImportError'
+              assert len(audio) > 0
+          PY
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -67,3 +92,4 @@ jobs:
             ${{ runner.temp }}/kitten-user/*.log
             ${{ runner.temp }}/kitten-user/*.wav
             ${{ runner.temp }}/kitten-user/evidence*/
+            ${{ runner.temp }}/kitten-user-tiny/

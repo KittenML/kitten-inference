@@ -1,6 +1,6 @@
 """Kitten TTS 2 backend for :class:`kitten_inference.KittenTTS`."""
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 
 import importlib as _importlib
 import sys as _sys

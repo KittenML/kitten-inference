@@ -88,7 +88,8 @@ def no_engine_message(name: Optional[str] = None) -> Optional[str]:
     if not _engine_platform():
         system = SYSTEMS.get(sys.platform, sys.platform)
         return ("Kitten TTS 2 runs on Linux x86-64 (NVIDIA or AMD Radeon GPU) and Windows x64 (NVIDIA GPU); this is "
-                f"{system} {platform.machine() or 'unknown'}. Kitten TTS 0.8 runs here.")
+                f"{system} {platform.machine() or 'unknown'}. Kitten TTS 0.8 and Kitten TTS 2 mini, nano and pico run "
+                "here.")
     return f"This install is missing its Kitten TTS 2 engine files. Reinstall it: {REINSTALL}"
 
 

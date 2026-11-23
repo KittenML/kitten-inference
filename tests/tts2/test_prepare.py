@@ -102,7 +102,7 @@ class FakePrepare:
                 (out / "native" / "model.kt2n").write_bytes(b"partial")
             raise self.fail_with
         if "--cloning-only" in argv:
-            config = json.loads((out / "config.json").read_text())
+            config = json.loads((out / "config.json").read_text(encoding="utf-8"))
             (out / "native" / "cloning").mkdir(parents=True, exist_ok=True)
             config["native"]["cloning"] = {"version": 1, "directory": "native/cloning", "files": []}
         else:

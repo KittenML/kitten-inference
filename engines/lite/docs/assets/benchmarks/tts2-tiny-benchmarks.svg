@@ -1,0 +1,110 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="820" viewBox="0 0 1120 820" role="img" aria-labelledby="title desc">
+<title id="title">Kitten TTS 2 mini, nano and pico: kitten-inference against the official runtimes</title>
+<desc id="desc">Real-time factor (compute time / audio length, lower is faster). CPU: kitten-inference float32 against the official int8 ONNX files with ONNX Runtime (kittenml 0.9.8), 4 threads, 69 s of English speech; Ryzen 9 9900X pico is the middle of two runs (0.010 and 0.014). GPU: kitten-inference CUDA float32 against the official PyTorch model (default settings) on the same GPU, long English text.</desc>
+<style>.bg{fill:#ffffff}.t{font:700 26px Arial,Helvetica,sans-serif;fill:#111}.s{font:400 14px Arial,Helvetica,sans-serif;fill:#555}.h{font:700 18px Arial,Helvetica,sans-serif;fill:#111}.g{font:700 15px Arial,Helvetica,sans-serif;fill:#2a7f62}.l{font:400 13px Arial,Helvetica,sans-serif;fill:#333}.v{font:600 12px Arial,Helvetica,sans-serif;fill:#111}.ours{fill:#2a7f62}.onnx{fill:#b8bec4}.pt{fill:#d9a066}.rule{stroke:#dddddd;stroke-width:1}</style>
+<rect class="bg" width="1120" height="820"/>
+<text class="t" x="40" y="46">Kitten TTS 2 mini, nano and pico: kitten-inference vs the official runtimes</text>
+<text class="s" x="40" y="72">Real-time factor (compute time / audio length; lower is faster).</text>
+<rect class="ours" x="40" y="88" width="14" height="14"/><text class="l" x="60" y="100">kitten-inference, float32</text>
+<rect class="onnx" x="240" y="88" width="14" height="14"/><text class="l" x="260" y="100">official int8 ONNX, ONNX Runtime (CPU)</text>
+<rect class="pt" x="540" y="88" width="14" height="14"/><text class="l" x="560" y="100">official PyTorch (GPU)</text>
+<text class="g" x="40" y="140">CPU, 4 threads, 69 s of English speech</text>
+<text class="h" x="40" y="168">pico</text>
+<text class="l" x="40" y="200">Arm64 Cortex-X925</text>
+<rect class="ours" x="40" y="208" width="84.0" height="21"/>
+<text class="v" x="130.0" y="223">0.011</text>
+<rect class="onnx" x="40" y="236" width="129.8" height="21"/>
+<text class="v" x="175.8" y="251">0.017</text>
+<text class="s" x="300" y="236" text-anchor="middle">1.5x faster</text>
+<text class="l" x="40" y="300">Ryzen 9 9900X</text>
+<rect class="ours" x="40" y="308" width="91.6" height="21"/>
+<text class="v" x="137.6" y="323">0.012</text>
+<rect class="onnx" x="40" y="336" width="110.7" height="21"/>
+<text class="v" x="156.7" y="351">0.0145</text>
+<text class="s" x="300" y="336" text-anchor="middle">1.2x faster</text>
+<text class="l" x="40" y="400">Ryzen 9 5950X</text>
+<rect class="ours" x="40" y="408" width="84.0" height="21"/>
+<text class="v" x="130.0" y="423">0.011</text>
+<rect class="onnx" x="40" y="436" width="168.0" height="21"/>
+<text class="v" x="214.0" y="451">0.022</text>
+<text class="s" x="300" y="436" text-anchor="middle">2.0x faster</text>
+<text class="h" x="410" y="168">nano</text>
+<text class="l" x="410" y="200">Arm64 Cortex-X925</text>
+<rect class="ours" x="410" y="208" width="76.0" height="21"/>
+<text class="v" x="492.0" y="223">0.019</text>
+<rect class="onnx" x="410" y="236" width="128.0" height="21"/>
+<text class="v" x="544.0" y="251">0.032</text>
+<text class="s" x="670" y="236" text-anchor="middle">1.7x faster</text>
+<text class="l" x="410" y="300">Ryzen 9 9900X</text>
+<rect class="ours" x="410" y="308" width="56.0" height="21"/>
+<text class="v" x="472.0" y="323">0.014</text>
+<rect class="onnx" x="410" y="336" width="108.0" height="21"/>
+<text class="v" x="524.0" y="351">0.027</text>
+<text class="s" x="670" y="336" text-anchor="middle">1.9x faster</text>
+<text class="l" x="410" y="400">Ryzen 9 5950X</text>
+<rect class="ours" x="410" y="408" width="72.0" height="21"/>
+<text class="v" x="488.0" y="423">0.018</text>
+<rect class="onnx" x="410" y="436" width="168.0" height="21"/>
+<text class="v" x="584.0" y="451">0.042</text>
+<text class="s" x="670" y="436" text-anchor="middle">2.3x faster</text>
+<text class="h" x="780" y="168">mini</text>
+<text class="l" x="780" y="200">Arm64 Cortex-X925</text>
+<rect class="ours" x="780" y="208" width="61.8" height="21"/>
+<text class="v" x="847.8" y="223">0.075</text>
+<rect class="onnx" x="780" y="236" width="125.2" height="21"/>
+<text class="v" x="911.2" y="251">0.152</text>
+<text class="s" x="1040" y="236" text-anchor="middle">2.0x faster</text>
+<text class="l" x="780" y="300">Ryzen 9 9900X</text>
+<rect class="ours" x="780" y="308" width="50.2" height="21"/>
+<text class="v" x="836.2" y="323">0.061</text>
+<rect class="onnx" x="780" y="336" width="111.2" height="21"/>
+<text class="v" x="897.2" y="351">0.135</text>
+<text class="s" x="1040" y="336" text-anchor="middle">2.2x faster</text>
+<text class="l" x="780" y="400">Ryzen 9 5950X</text>
+<rect class="ours" x="780" y="408" width="63.4" height="21"/>
+<text class="v" x="849.4" y="423">0.077</text>
+<rect class="onnx" x="780" y="436" width="168.0" height="21"/>
+<text class="v" x="954.0" y="451">0.204</text>
+<text class="s" x="1040" y="436" text-anchor="middle">2.6x faster</text>
+<line class="rule" x1="40" y1="500" x2="1080" y2="500"/>
+<text class="g" x="40" y="535">NVIDIA GPU (CUDA), long English text</text>
+<text class="h" x="40" y="563">pico</text>
+<text class="l" x="40" y="595">NVIDIA RTX 4090</text>
+<rect class="ours" x="40" y="603" width="13.8" height="21"/>
+<text class="v" x="59.8" y="618">0.000515</text>
+<rect class="pt" x="40" y="631" width="56.5" height="21"/>
+<text class="v" x="102.5" y="646">0.002108</text>
+<text class="s" x="300" y="631" text-anchor="middle">4.1x faster</text>
+<text class="l" x="40" y="695">NVIDIA L4</text>
+<rect class="ours" x="40" y="703" width="31.4" height="21"/>
+<text class="v" x="77.4" y="718">0.001171</text>
+<rect class="pt" x="40" y="731" width="168.0" height="21"/>
+<text class="v" x="214.0" y="746">0.006267</text>
+<text class="s" x="300" y="731" text-anchor="middle">5.4x faster</text>
+<text class="h" x="410" y="563">nano</text>
+<text class="l" x="410" y="595">NVIDIA RTX 4090</text>
+<rect class="ours" x="410" y="603" width="17.2" height="21"/>
+<text class="v" x="433.2" y="618">0.000691</text>
+<rect class="pt" x="410" y="631" width="57.1" height="21"/>
+<text class="v" x="473.1" y="646">0.0023</text>
+<text class="s" x="670" y="631" text-anchor="middle">3.3x faster</text>
+<text class="l" x="410" y="695">NVIDIA L4</text>
+<rect class="ours" x="410" y="703" width="47.7" height="21"/>
+<text class="v" x="463.7" y="718">0.001919</text>
+<rect class="pt" x="410" y="731" width="168.0" height="21"/>
+<text class="v" x="584.0" y="746">0.006763</text>
+<text class="s" x="670" y="731" text-anchor="middle">3.5x faster</text>
+<text class="h" x="780" y="563">mini</text>
+<text class="l" x="780" y="595">NVIDIA RTX 4090</text>
+<rect class="ours" x="780" y="603" width="31.3" height="21"/>
+<text class="v" x="817.3" y="618">0.002309</text>
+<rect class="pt" x="780" y="631" width="52.2" height="21"/>
+<text class="v" x="838.2" y="646">0.003846</text>
+<text class="s" x="1040" y="631" text-anchor="middle">1.7x faster</text>
+<text class="l" x="780" y="695">NVIDIA L4</text>
+<rect class="ours" x="780" y="703" width="114.5" height="21"/>
+<text class="v" x="900.5" y="718">0.008433</text>
+<rect class="pt" x="780" y="731" width="168.0" height="21"/>
+<text class="v" x="954.0" y="746">0.012378</text>
+<text class="s" x="1040" y="731" text-anchor="middle">1.5x faster</text>
+</svg>

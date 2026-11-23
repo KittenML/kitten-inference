@@ -117,6 +117,18 @@ if importlib.util.find_spec(f"kitten_inference._tts2_{other}") is not None:
     print(f"the {other} engine's text-data tool writes the same bytes")
 shutil.rmtree(folder.parent)
 print(f"layout OK: {m.LIB.name} {m.LIB.stat().st_size} bytes; {version}; CAPS {m.CAPS}")
+if a.backend == "cuda":
+    # The NVIDIA GPU library of Kitten TTS 2 mini, nano and pico: loads without a GPU; kt08g_init says why it cannot
+    # run when there is no GPU or driver (the runners have none).
+    tiny_path = m.LIB.parent / ("kt08_cuda.dll" if os.name == "nt" else "libkt08_cuda.so")
+    assert tiny_path.is_file(), tiny_path
+    tiny = ctypes.CDLL(str(tiny_path))
+    tiny.kt08g_api_version.restype = ctypes.c_int
+    tiny.kt08g_init.restype, tiny.kt08g_init.argtypes = ctypes.c_int, [ctypes.c_char_p]
+    tiny.kt08g_last_error.restype = ctypes.c_char_p
+    assert tiny.kt08g_api_version() == 1
+    rc = tiny.kt08g_init(b"cuda")
+    print(f"{tiny_path.name} {tiny_path.stat().st_size} bytes; init rc {rc} {tiny.kt08g_last_error().decode()!r}")
 
 if a.assets:
     r = subprocess.run([str(m.CLI), "--assets", a.assets, "--text", "Hello from the Kitten TTS 2 wheel.", "--voice",

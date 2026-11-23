@@ -6,7 +6,7 @@
 """
 from .preprocess import NormalizedSpan, NormalizedTextResult, normalize_text, normalize_text_result
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 
 __all__ = [
     "get_model",

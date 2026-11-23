@@ -7,7 +7,8 @@
 # `auditwheel show` (the wheel must need nothing outside the manylinux_2_28 policy: the CUDA runtime is static and the
 # driver is loaded at run time). Environment:
 #   JOBS (default: the CPUs available), WHEEL_VERSION (default: the engine's version; or that version plus .postN), KT2N_TEXT_DEPS (reuse a text-deps prefix),
-#   KT2N_SASS_CHECK=0 (skip the GPU code check: never for a release).
+#   KT2N_SASS_CHECK=0 (skip the GPU code check: never for a release), KT08_CUDA_LIB (the Kitten TTS 2 mini/nano/pico
+#   NVIDIA GPU library, libkt08_cuda.so from engines/lite/cuda-library/build_linux.sh, added to lib/).
 set -euo pipefail
 SRC=$(cd "$(dirname "$0")/.." && pwd)
 OUT=${1:-$SRC/dist}
@@ -37,8 +38,10 @@ t2=$(date +%s)
 rm -rf build/wheel-stage
 cmake --install build/wheel --prefix build/wheel-stage > /dev/null
 mkdir -p "$OUT"
+extra=()
+[ -n "${KT08_CUDA_LIB:-}" ] && extra=(--extra-lib "$KT08_CUDA_LIB")
 "$PY" packaging/make_wheel.py --stage build/wheel-stage --plat manylinux_2_28_x86_64 --out "$OUT" \
-  --version "${WHEEL_VERSION:-}"
+  --version "${WHEEL_VERSION:-}" "${extra[@]}"
 WHL=$(ls -t "$OUT"/kitten_inference_tts2_cu12-*-py3-none-manylinux_2_28_x86_64.whl | head -1)
 "$PY" -m pip install -q "auditwheel>=6,<7"
 "$PY" -m auditwheel show "$WHL" | tee "$OUT/auditwheel-show.txt"

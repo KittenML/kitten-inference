@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Assemble the kitten-inference-tts2-cu12 wheel from an installed wheel-preset build (standard library only).
 
-  make_wheel.py --stage STAGE --plat manylinux_2_28_x86_64|win_amd64 --out DIR [--version 0.2.0.post1]
+  make_wheel.py --stage STAGE --plat manylinux_2_28_x86_64|win_amd64 --out DIR [--version 0.2.0.post1] [--extra-lib LIB]
 
 STAGE is `cmake --install build/<wheel preset> --prefix STAGE`: bin/kitten-tts-native(.exe),
 bin/kt2n_prepare_text_data(.exe) and the engine library (lib/libkt2n_engine.so, or bin/kt2n_engine.dll on Windows,
@@ -10,6 +10,9 @@ which goes to lib/ in the wheel). The wheel holds exactly the package layout of 
   kitten_inference/_tts2_cuda/__init__.py   BACKEND, ABI, VERSION, LIB, CLI, TEXT_DATA_TOOL, BUILD_INFO, CAPS
   kitten_inference/_tts2_cuda/lib/          the engine library
   kitten_inference/_tts2_cuda/bin/          the command-line tool and the text-data helper
+--extra-lib adds another library to lib/: the NVIDIA GPU library of Kitten TTS 2 mini, nano and pico
+(libkt08_cuda.so / kt08_cuda.dll, engines/lite/cuda-library/build_*), which kitten-inference loads for their
+backend="cuda". It is checked to load and to have that library's C API.
 
 --version is the engine's version (project VERSION in engines/tts2/CMakeLists.txt, the default) or a post release of it
 (.postN, a packaging fix of the same engine); anything else is refused, so the wheel's version always names the engine
@@ -113,6 +116,8 @@ def main() -> int:
     p.add_argument("--out", type=Path, required=True)
     p.add_argument("--version", default="", help="the engine's version (default) or that version plus .postN")
     p.add_argument("--epoch", type=int, help="timestamp for the archive entries (default SOURCE_DATE_EPOCH)")
+    p.add_argument("--extra-lib", type=Path, action="append", default=[],
+                   help="the Kitten TTS 2 mini/nano/pico NVIDIA GPU library (libkt08_cuda.so or kt08_cuda.dll)")
     a = p.parse_args()
     engine = engine_version()
     a.version = a.version or engine
@@ -129,9 +134,18 @@ def main() -> int:
         f"{PKG}/bin/kitten-tts-native{exe}": stage / f"bin/kitten-tts-native{exe}",
         f"{PKG}/bin/kt2n_prepare_text_data{exe}": stage / f"bin/kt2n_prepare_text_data{exe}",
     }
+    for extra in a.extra_lib:
+        if extra.name != ("kt08_cuda.dll" if windows else "libkt08_cuda.so"):
+            sys.exit(f"--extra-lib {extra}: expected {'kt08_cuda.dll' if windows else 'libkt08_cuda.so'}")
+        files[f"{PKG}/lib/{extra.name}"] = extra.resolve()
     for dest, src in files.items():
         if not src.is_file() or src.is_symlink():
             sys.exit(f"missing (or a symlink): {src}")
+    for extra in a.extra_lib:
+        tiny = ctypes.CDLL(str(extra.resolve()))   # loads without a GPU or driver
+        tiny.kt08g_api_version.restype = ctypes.c_int
+        if tiny.kt08g_api_version() != 1:
+            sys.exit(f"{extra}: kt08g API {tiny.kt08g_api_version()}, expected 1")
     info = build_info(lib_src)
     caps = ("voice_cloning",) if "cap:voice.cloning" in info.split() else ()
     if not caps:

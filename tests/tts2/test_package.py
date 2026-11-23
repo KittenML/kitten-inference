@@ -47,7 +47,8 @@ def test_metadata():
     assert not meta.get_all("Provides-Extra")
     requires = [Requirement(r) for r in dist.requires or []]
     assert not any("torch" in r.name for r in requires)
-    expected = {"numpy", "huggingface-hub", "soundfile", "phonemizer", "espeakng-loader", "tokenizers", "filelock"}
+    expected = {"numpy", "huggingface-hub", "soundfile", "phonemizer", "espeakng-loader", "tokenizers", "filelock",
+                "spacy", "regex", "addict", "jaconv", "fugashi"}
     assert {canonicalize_name(r.name) for r in requires} == expected
     scripts = {ep.name: ep.value for ep in dist.entry_points if ep.group == "console_scripts"}
     assert scripts == {"kitten-tts": "kitten_inference._cli:main"}
