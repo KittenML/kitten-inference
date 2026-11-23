@@ -5,11 +5,11 @@ build-backend = "scikit_build_core.build"
 [project]
 name = "kitten-inference"
 version = "0.2.1"
-description = "Native inference for Kitten TTS 0.8, Kitten TTS 2 and Kitten TTS 2 mini, nano and pico"
+description = "Native inference for Kitten TTS 0.8, Kitten TTS 2 and Kitten TTS 2 mini, nano and pico, and speech to text with Kitten ASR"
 readme = "README.md"
 requires-python = ">=3.8"
-license = "Apache-2.0 AND MIT AND BSD-3-Clause AND LGPL-2.1-or-later AND NCSA AND PSF-2.0 AND Unicode-3.0 AND SunPro AND BSD-3-Clause WITH PCRE2-exception AND GPL-3.0-or-later WITH GCC-exception-3.1 AND Apache-2.0 WITH LLVM-exception AND LicenseRef-Microsoft-Visual-C-Runtime AND LicenseRef-NVIDIA-CUDA-EULA"
-license-files = ["LICENSE", "NOTICE", "engines/lite/NOTICE", "engines/lite/licenses/*.txt", "engines/tts2/NOTICE", "engines/tts2/licenses/*.txt", "engines/tts2/licenses/rocm/*.txt", "src/kitten_inference/tts2_tiny/frontend/NOTICE"]
+license = "Apache-2.0 AND MIT AND BSD-2-Clause AND BSD-3-Clause AND LGPL-2.1-or-later AND NCSA AND PSF-2.0 AND Unicode-3.0 AND SunPro AND BSD-3-Clause WITH PCRE2-exception AND GPL-3.0-or-later WITH GCC-exception-3.1 AND Apache-2.0 WITH LLVM-exception AND LicenseRef-Microsoft-Visual-C-Runtime AND LicenseRef-NVIDIA-CUDA-EULA"
+license-files = ["LICENSE", "NOTICE", "engines/lite/NOTICE", "engines/lite/licenses/*.txt", "engines/tts2/NOTICE", "engines/tts2/licenses/*.txt", "engines/tts2/licenses/rocm/*.txt", "src/kitten_inference/tts2_tiny/frontend/NOTICE", "engines/asr/NOTICE"]
 # spacy, regex and addict: the English text front end of Kitten TTS 2 mini, nano and pico; fugashi and jaconv: Japanese
 # (mini). The code of misaki 0.9.4 and num2words 0.5.14 they use is vendored in src/kitten_inference/tts2_tiny/frontend,
 # and so is spaCy's small English model (en_core_web_sm 3.8.0), which works with spaCy 3.8 only.
@@ -23,7 +23,7 @@ dependencies = [
     "soundfile>=0.12.1",
     "espeakng_loader>=0.2.4",
     "phonemizer>=3.3",
-    "tokenizers>=0.22,<0.23; python_version >= \"3.9\" and ((sys_platform == \"linux\" and platform_machine == \"x86_64\") or (sys_platform == \"win32\" and platform_machine == \"AMD64\"))",
+    "tokenizers>=0.22,<0.23; python_version >= \"3.9\" and ((sys_platform == \"linux\" and (platform_machine == \"x86_64\" or platform_machine == \"aarch64\")) or (sys_platform == \"win32\" and platform_machine == \"AMD64\"))",
     "filelock>=3.12; python_version >= \"3.9\" and ((sys_platform == \"linux\" and platform_machine == \"x86_64\") or (sys_platform == \"win32\" and platform_machine == \"AMD64\"))",
     "spacy>=3.8,<3.9; python_version >= \"3.10\" and python_version < \"3.15\"",
     "regex>=2023.10.3; python_version >= \"3.10\" and python_version < \"3.15\"",
@@ -34,6 +34,7 @@ dependencies = [
 
 [project.scripts]
 kitten-tts = "kitten_inference._cli:main"
+kitten-asr = "kitten_inference.asr._cli:main"
 
 [project.urls]
 Homepage = "https://github.com/KittenML/kitten-inference"
@@ -41,7 +42,7 @@ Homepage = "https://github.com/KittenML/kitten-inference"
 [tool.scikit-build]
 cmake.build-type = "Release"
 cmake.define = { ENABLE_CUDA = "OFF", ENABLE_NATIVE_ARCH = "OFF", KITTEN_BUILD_EXTRAS = "OFF" }
-build.targets = ["_engine"]
+build.targets = ["_engine", "kasr"]
 install.components = ["python"]
 wheel.packages = ["src/kitten_inference"]
 wheel.exclude = ["**/__pycache__", "**/*.py[co]"]

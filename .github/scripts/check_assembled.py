@@ -1,23 +1,28 @@
 #!/usr/bin/env python3
 """Checks the assembled kitten-inference wheels, independently of assemble_wheels.py (it shares no code with it).
 
-    python .github/scripts/check_assembled.py --lock .github/release-inputs.json --inputs IN --source . OUT/*.whl
+    python .github/scripts/check_assembled.py --lock .github/release-inputs.json --inputs IN --source . \
+        [--asr-cpu DIST] OUT/*.whl
 
-IN is the folder of inputs the wheels were assembled from, --source the release commit's checkout. Checked:
+IN is the folder of inputs the wheels were assembled from, --source the release commit's checkout, DIST the folder
+with the speech recognition CPU engine wheels (kitten_inference_asr_cpu-*-py3-none-<platform>.whl) they were given;
+without --asr-cpu no wheel may carry kitten_inference/_asr_cpu/. Checked:
   - inputs: every file the lock names is in IN with its sha256 and size;
   - the set: one wheel per TTS 0.8 input, named as the lock implies, and the (Python, platform) pairs of
     pypi_ready.COMPLETE["kitten-inference"];
   - each wheel: one kitten_inference-<V>.dist-info; WHEEL tags equal the file name's, Root-Is-Purelib false; RECORD
     lists every member once, with the right hash and size; no directory entries, __pycache__, .pyc or SBOM; every
-    License-File is there and every licence file is listed; the kitten-tts command; at most 100 MB; no member path
+    License-File is there and every licence file is listed; the kitten-tts and kitten-asr commands; at most 100 MB; no member path
     over 90 characters (the dist-info ones counted as for a .post99 version);
   - METADATA and entry_points.txt are the same bytes in every wheel; the extras' requirements, parsed, match the TTS
     0.8 build's and engines/tts2/python/pyproject.toml's, and every [tts-2] one has the Linux x86-64 / Windows x64 marker;
   - byte for byte: every TTS 0.8 member equals its input's RECORD row and zip attributes, except the overlay files,
     which equal the source; the TTS 0.8 Python and JSON files equal the source (CRLF and the delvewheel block aside);
-    kitten_inference/__init__.py, tts2/ and the licence files equal the source; the engine files are exactly the
-    lock's engine_files rows, in the wheels that carry engines (CPython 3.9 or newer: CUDA and ROCm in
-    manylinux_2_28_x86_64, CUDA in win_amd64), with the Linux programs and the ROCm library 0755;
+    kitten_inference/__init__.py, tts2/, asr/ (Python files only) and the licence files equal the source; the engine
+    files are exactly the lock's engine_files rows, in the wheels that carry engines (CPython 3.9 or newer: CUDA and
+    ROCm in manylinux_2_28_x86_64, CUDA in win_amd64), with the Linux programs and the ROCm library 0755;
+    kitten_inference/_asr_cpu/ holds exactly the files of the CPU engine wheel of the wheel's platform, on CPython 3.10
+    or newer, and is absent everywhere else;
   - on manylinux_2_28_x86_64 wheels, every ELF file passes `check_wheel_rocm.py symbols` (extracted one at a time);
   - every library in kitten_inference_tts08.libs/ is named in the TTS 0.8 NOTICE;
   - the engine and TTS 0.8 sources at HEAD equal the lock's source_trees.
@@ -53,8 +58,10 @@ C2_MARKER = ('python_version >= "3.9" and ((sys_platform == "linux" and platform
 ENGINE_DIRS = {"cuda-linux": "_tts2_cuda", "cuda-windows": "_tts2_cuda", "rocm": "_tts2_rocm"}
 DELVEWHEEL_BLOCK = re.compile(rb"\n\n# start delvewheel patch\n.*?\n# end delvewheel patch\n\n", re.S)
 LIBRARY = re.compile(r"kitten_inference_tts08\.libs/[^/]+\.(dll|dylib|so)(\.\d+)*")
+ASR_CPU_PLATFORMS = ("manylinux_2_28_x86_64", "manylinux_2_28_aarch64", "macosx_11_0_arm64", "win_amd64")
+ASR_MIN_MINOR = 10
 ALWAYS = ("kitten_inference/__init__.py", "kitten_inference/tts2/__init__.py",
-          "kitten_inference/tts2/_assets/prepare.py")
+          "kitten_inference/tts2/_assets/prepare.py", "kitten_inference/asr/__init__.py")
 
 
 def b64(data: bytes) -> str:
@@ -141,8 +148,10 @@ def run_symbols(source: Path):
 
 
 class Check:
-    def __init__(self, lock: dict, inputs: Path, source: Path, expected_pairs=None, elf=None):
+    def __init__(self, lock: dict, inputs: Path, source: Path, expected_pairs=None, elf=None, asr_cpu=None):
         self.lock, self.inputs = lock, Path(inputs)
+        self.asr_cpu = self.load_asr_cpu(asr_cpu)   # platform -> {member path: bytes}
+        self.asr_cpu_wheels = 0
         self.tree = Tree(source)
         self.expected_pairs = expected_pairs
         self.elf = elf if elf is not None else run_symbols(source)
@@ -153,6 +162,22 @@ class Check:
 
     def fail(self, msg: str):
         self.problems.append(msg)
+
+    @staticmethod
+    def load_asr_cpu(folder) -> dict:
+        """The files of each speech recognition CPU engine wheel in `folder`, by platform."""
+        out = {}
+        if folder is None:
+            return out
+        for path in sorted(Path(folder).rglob("kitten_inference_asr_cpu-*-py3-none-*.whl")):
+            plats = name_tags(path.name)[4]
+            hit = [p for p in ASR_CPU_PLATFORMS if p in plats]
+            if len(hit) != 1 or hit[0] in out:
+                raise SystemExit(f"{path.name}: expected one CPU engine wheel per platform of {ASR_CPU_PLATFORMS}")
+            with zipfile.ZipFile(path) as z:
+                out[hit[0]] = {i.filename: z.read(i) for i in z.infolist()
+                               if i.filename.startswith("kitten_inference/_asr_cpu/") and not i.filename.endswith("/")}
+        return out
 
     # ---------------------------------------------------------------- inputs
 
@@ -202,14 +227,18 @@ class Check:
 
     def licence_sources(self) -> dict:
         """dist-info/licenses/<path> -> source path."""
-        out = {p: p for p in ("LICENSE", "NOTICE", "engines/lite/NOTICE", "engines/tts2/NOTICE",
+        out = {p: p for p in ("LICENSE", "NOTICE", "engines/lite/NOTICE", "engines/tts2/NOTICE", "engines/asr/NOTICE",
                                "src/kitten_inference/tts2_tiny/frontend/NOTICE")}
         for folder in ("engines/lite/licenses", "engines/tts2/licenses"):
             out.update({p: p for p in self.tree.files(folder)})
         out["engines/tts2/licenses/lgpl-source/atempo.cc"] = "engines/tts2/src/post/atempo.cc"
         out["engines/tts2/licenses/lgpl-source/atempo.h"] = "engines/tts2/include/kt2n/post/atempo.h"
-        return {p.replace("engines/lite/", "tts-0.8/").replace("engines/tts2/", "tts-2/")
+        return {p.replace("engines/lite/", "tts-0.8/").replace("engines/tts2/", "tts-2/").replace("engines/asr/", "asr/")
                 .replace("src/kitten_inference/tts2_tiny/frontend/", "tts-2-tiny/"): value for p, value in out.items()}
+
+    def asr_sources(self) -> dict:
+        """kitten_inference/asr/<path> -> source path (the ASR part is src/kitten_inference/asr, nothing else)."""
+        return {p[len("src/"):]: p for p in self.tree.files("src/kitten_inference/asr")}
 
     def tts2_sources(self) -> dict:
         """kitten_inference/tts2/<path> -> source path (the Python files of the TTS 2 engine)."""
@@ -254,7 +283,7 @@ class Check:
 
     # ---------------------------------------------------------------- wheels
 
-    def check_wheel(self, path: Path, w_file: str, version: str, base: str, licences: dict, tts2: dict):
+    def check_wheel(self, path: Path, w_file: str, version: str, base: str, licences: dict, tts2: dict, asr: dict):
         name = path.name
         _, _, py, abi, plats = name_tags(name)
         di = f"kitten_inference-{version}.dist-info"
@@ -324,6 +353,8 @@ class Check:
         if not parser.has_section("console_scripts") or \
                 parser["console_scripts"].get("kitten-tts") != "kitten_inference._cli:main":
             self.fail(f"{name}: no kitten-tts = kitten_inference._cli:main in entry_points.txt")
+        elif parser["console_scripts"].get("kitten-asr") != "kitten_inference.asr._cli:main":
+            self.fail(f"{name}: no kitten-asr = kitten_inference.asr._cli:main in entry_points.txt")
         # contents
         for n in ALWAYS:
             if n not in data:
@@ -343,6 +374,30 @@ class Check:
         for n in sorted(have_tts2 & set(tts2)):
             if data[n] != self.tree.read(tts2[n]):
                 self.fail(f"{name}: {n} differs from {tts2[n]}")
+        have_asr = {n for n in data if n.startswith("kitten_inference/asr/")}
+        if have_asr != set(asr):
+            self.fail(f"{name}: kitten_inference/asr/ differs from the source's files: "
+                      f"{sorted(have_asr ^ set(asr))[:5]}")
+        for n in sorted(have_asr):
+            if not n.endswith(".py"):
+                self.fail(f"{name}: {n} is not a .py file (kitten_inference/asr/ is Python only)")
+            elif n in asr and data[n] != self.tree.read(asr[n]):
+                self.fail(f"{name}: {n} differs from {asr[n]}")
+        # the speech recognition CPU engine: the CPU engine wheel of this platform, byte for byte, or nothing
+        cpu_plat = next((p for p in ASR_CPU_PLATFORMS if p in plats), None)
+        minor = int(py[3:]) if re.fullmatch(r"cp3\d+", py) else 0
+        want_cpu = self.asr_cpu.get(cpu_plat, {}) if minor >= ASR_MIN_MINOR else {}
+        have_cpu = {n for n in data if n.startswith("kitten_inference/_asr_cpu/")}
+        if have_cpu != set(want_cpu):
+            self.fail(f"{name}: kitten_inference/_asr_cpu/ files {sorted(have_cpu ^ set(want_cpu))[:4]} are missing or "
+                      "should not be there")
+        for n in sorted(have_cpu & set(want_cpu)):
+            if data[n] != want_cpu[n]:
+                self.fail(f"{name}: {n} differs from the CPU engine wheel for {cpu_plat}")
+            else:
+                self.copied += 1
+        if want_cpu:
+            self.asr_cpu_wheels += 1
         # engines
         parts = engines_expected(py, plats)
         if parts and len(plats) != 1:
@@ -464,12 +519,12 @@ class Check:
                           for f, m in self.input_meta.items() if f in expected.values()}
         if len(tts08_requires) > 1:
             self.fail("the TTS 0.8 inputs do not all have the same Requires-Dist")
-        licences, tts2 = self.licence_sources(), self.tts2_sources()
+        licences, tts2, asr = self.licence_sources(), self.tts2_sources(), self.asr_sources()
         metas, entries = set(), set()
         for w, _ in sorted(parsed):
             if w.name not in expected:
                 continue
-            meta, entry = self.check_wheel(w, expected[w.name], version, base, licences, tts2)
+            meta, entry = self.check_wheel(w, expected[w.name], version, base, licences, tts2, asr)
             metas.add(meta)
             entries.add(entry)
         if len(metas) > 1 or len(entries) > 1:
@@ -489,10 +544,12 @@ def main(argv=None) -> int:
     p.add_argument("--lock", type=Path, required=True)
     p.add_argument("--inputs", type=Path, required=True)
     p.add_argument("--source", type=Path, required=True)
+    p.add_argument("--asr-cpu", type=Path, help="folder with the speech recognition CPU engine wheels given to the "
+                                                "assembly (none: no wheel may carry kitten_inference/_asr_cpu/)")
     p.add_argument("wheels", nargs="+", type=Path)
     a = p.parse_args(argv)
     lock = json.loads(a.lock.read_text(encoding="utf-8"))
-    check = Check(lock, a.inputs, a.source)
+    check = Check(lock, a.inputs, a.source, asr_cpu=a.asr_cpu)
     problems = check.run(a.wheels)
     for w in check.warnings:
         print(f"::warning::{w}")
@@ -502,7 +559,9 @@ def main(argv=None) -> int:
     print(f"{len(check.summary)} wheels: {check.copied} files copied unchanged, "
           f"{len(lock['tts08_python_overlay'])} Python files from {check.tree.commit[:12]}, "
           f"{len(check.engine_rows_seen)}/{rows} engine files match the lock, "
-          f"{check.elf_files} ELF files within manylinux_2_28")
+          f"{check.elf_files} ELF files within manylinux_2_28, "
+          f"the speech recognition CPU engine in {check.asr_cpu_wheels} wheels "
+          f"({', '.join(sorted(check.asr_cpu)) or 'no CPU engine wheel given'})")
     if os.environ.get("GITHUB_STEP_SUMMARY"):
         with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as out:
             out.write(f"### kitten-inference wheels ({len(check.summary)})\n\n"

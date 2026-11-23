@@ -346,7 +346,8 @@ def test_the_publish_job_runs_only_for_a_release_tag_after_every_test():
     assert "always()" not in condition and "||" not in condition
     needs = re.search(r"^    needs: \[(.*)\]$", publish, re.M).group(1)
     # source-tests runs only when nothing is assembled, so never before a publish (a skipped need would skip it).
-    jobs = set(re.findall(r"^  ([A-Za-z0-9_-]+):\n", _jobs(text), re.M)) - {"publish", "build", "lock",
+    # asr-cpu builds an input of the assembly, like build: assemble needs it, and publish needs assemble.
+    jobs = set(re.findall(r"^  ([A-Za-z0-9_-]+):\n", _jobs(text), re.M)) - {"publish", "build", "asr-cpu", "lock",
                                                                             "source-tests"}
     assert {n.strip() for n in needs.split(",")} == jobs
     assert "release_files.py assembled upload" in publish and "pypi_ready.py verify" in publish

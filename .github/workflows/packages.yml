@@ -1,5 +1,7 @@
 # kitten-inference, the one package on PyPI. Its wheels are assembled, not built: each is a TTS 0.8 wheel of
-# tts-0.8.yml plus the TTS 2 Python API and kitten_inference/__init__.py built here, and on Linux x86-64 and Windows x64
+# tts-0.8.yml plus the TTS 2 Python API, the ASR engine (Python files, kitten_inference/asr) and
+# kitten_inference/__init__.py built here, the ASR CPU engine built here once per platform (job asr-cpu: Linux x86-64,
+# Linux arm64, Windows x64 and macOS arm64, for CPython 3.10 or newer; kitten_inference/_asr_cpu), and on Linux x86-64 and Windows x64
 # the TTS 2 engines of tts-2-engine.yml (CUDA) and tts-2-rocm.yml (ROCm, Linux). Those inputs are the GitHub Actions
 # artifacts of the runs that built and tested them, in this repository, pinned with every file's sha256 in
 # .github/release-inputs.json (the lock): the engine binaries in every wheel are the tested ones, byte for byte.
@@ -24,6 +26,9 @@ on:
       - "CMakeLists.txt"
       - "umbrella/**"
       - "engines/tts2/python/**"
+      - "engines/asr/python/**"
+      - "engines/asr/NOTICE"
+      - "engines/asr-cpu/**"
       - "engines/tts2/tools/kt2n_assets/**"
       - "engines/tts2/src/**"
       - "engines/tts2/include/**"
@@ -56,6 +61,9 @@ on:
       - "CMakeLists.txt"
       - "umbrella/**"
       - "engines/tts2/python/**"
+      - "engines/asr/python/**"
+      - "engines/asr/NOTICE"
+      - "engines/asr-cpu/**"
       - "engines/tts2/tools/kt2n_assets/**"
       - "engines/tts2/src/**"
       - "engines/tts2/include/**"
@@ -94,8 +102,9 @@ env:
 
 jobs:
   build:
-    # The umbrella wheel (kitten_inference/__init__.py and the metadata users see) and the TTS 2 Python API wheel at
-    # this commit: inputs of the assembly only, never uploaded.
+    # The umbrella wheel (kitten_inference/__init__.py and the metadata users see), the TTS 2 Python API wheel and the
+    # ASR wheel (the Python files of src/kitten_inference/asr) at this commit: inputs of the assembly only, never
+    # uploaded.
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -113,12 +122,13 @@ jobs:
         run: |
           python -m build umbrella --outdir dist
           python -m build engines/tts2/python --outdir dist
+          python -m build engines/asr/python --outdir dist
           ls -l dist
       - name: Check the archives
         run: |
           python -m twine check --strict dist/*
           python - <<'PY'
-          import glob, os, tarfile, zipfile
+          import glob, os, subprocess, tarfile, zipfile
           u, t = os.environ["UMBRELLA_VERSION"], os.environ["TTS2_VERSION"]
           umbrella = zipfile.ZipFile(glob.glob(f"dist/kitten_inference-{u}-py3-none-any.whl")[0]).namelist()
           tts2 = zipfile.ZipFile(glob.glob(f"dist/kitten_inference_tts2-{t}-py3-none-any.whl")[0]).namelist()
@@ -132,7 +142,22 @@ jobs:
               assert need in tts2, need
           sdist = tarfile.open(glob.glob(f"dist/kitten_inference_tts2-{t}.tar.gz")[0]).getnames()
           assert any(n.endswith("kitten_inference/tts2/_assets/prepare.py") for n in sdist)
-          print(len(umbrella), "files in the umbrella wheel,", len(tts2), "in the tts2 wheel")
+          # The ASR wheel (the base version, like the tts2 one): exactly the files of src/kitten_inference/asr at this
+          # commit, all of them Python, so that every assembled wheel can carry them.
+          info = f"kitten_inference_asr-{t}.dist-info/"
+          asr = zipfile.ZipFile(glob.glob(f"dist/kitten_inference_asr-{t}-py3-none-any.whl")[0]).namelist()
+          asr_files = sorted(n for n in asr if not n.startswith(info))
+          tracked = subprocess.run(["git", "ls-files", "-z", "--", "src/kitten_inference/asr"], check=True,
+                                   capture_output=True, text=True).stdout.split("\0")
+          assert asr_files == sorted(n[len("src/"):] for n in tracked if n), (asr_files, tracked)
+          assert all(n.startswith("kitten_inference/asr/") and n.endswith(".py") for n in asr_files), asr_files
+          for need in ("kitten_inference/asr/__init__.py", "kitten_inference/asr/__main__.py"):
+              assert need in asr_files, need
+          assert f"{info}entry_points.txt" not in asr, "the ASR input must not add a command"
+          sdist = tarfile.open(glob.glob(f"dist/kitten_inference_asr-{t}.tar.gz")[0]).getnames()
+          assert any(n.endswith("kitten_inference/asr/__init__.py") for n in sdist)
+          print(len(umbrella), "files in the umbrella wheel,", len(tts2), "in the tts2 wheel,", len(asr_files),
+                "Python files in the asr wheel")
           PY
       - name: Stand-ins of the earlier kitten-inference 0.1.x (the fallback check of check_extras.py)
         run: python tests/packaging/make_stub_wheels.py stubs --old stubs-old
@@ -145,6 +170,80 @@ jobs:
         with:
           name: stubs-old
           path: stubs-old/
+          if-no-files-found: error
+
+  asr-cpu:
+    # The speech recognition CPU engine (libkasr on llama.cpp's libraries, engines/asr-cpu) at this commit, once per
+    # platform: a py3-none-<platform> wheel (the libraries are loaded with ctypes, so one build serves every Python).
+    # An input of the assembly only, never uploaded to PyPI. Linux builds run in the manylinux_2_28 image.
+    name: ASR CPU engine, ${{ matrix.family }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - family: linux-x86_64
+            os: ubuntu-24.04
+            cibw_build: cp312-manylinux_x86_64
+            arch: x86_64
+          - family: linux-aarch64
+            os: ubuntu-24.04-arm
+            cibw_build: cp312-manylinux_aarch64
+            arch: aarch64
+          - family: macos-arm64
+            os: macos-14
+            cibw_build: cp312-macosx_arm64
+            arch: arm64
+          - family: windows-x86_64
+            os: windows-2022
+            cibw_build: cp312-win_amd64
+            arch: AMD64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    # The macOS engine wheel was never built by this workflow yet: a failure there leaves the Mac wheels without the
+    # speech recognition engine (the assembly warns; a release (tag) run refuses) instead of stopping every platform.
+    continue-on-error: ${{ matrix.family == 'macos-arm64' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff  # v6: pinned to a commit (builds a published file)
+      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756
+        if: runner.os == 'Windows'
+        with:
+          arch: x64
+      - name: Build (cibuildwheel; auditwheel / delocate check that the libraries need nothing outside the platform)
+        uses: pypa/cibuildwheel@8d2b08b68458a16aeb24b64e68a09ab1c8e82084  # v3.4.1: pinned to a commit (builds published wheels)
+        env:
+          CIBW_BUILD: ${{ matrix.cibw_build }}
+          CIBW_ARCHS_LINUX: ${{ matrix.arch }}
+          CIBW_ARCHS_MACOS: ${{ matrix.arch }}
+          CIBW_ARCHS_WINDOWS: ${{ matrix.arch }}
+          CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_28
+          CIBW_MANYLINUX_AARCH64_IMAGE: manylinux_2_28
+          CIBW_ENVIRONMENT_MACOS: MACOSX_DEPLOYMENT_TARGET=11.0
+          CIBW_REPAIR_WHEEL_COMMAND_MACOS: >-
+            uvx --python 3.12 --from delocate==0.13.0 delocate-wheel --require-archs {delocate_archs}
+            -w {dest_dir} -v {wheel}
+          # The libraries load and answer on the build platform (no model is needed for this).
+          CIBW_TEST_COMMAND: python {project}/engines/asr-cpu/python/smoke.py
+          CIBW_BUILD_VERBOSITY: "1"
+        with:
+          package-dir: engines/asr-cpu/python
+          output-dir: asr-cpu
+      - name: One py3-none wheel with the libraries and llama.cpp's licence, nothing else
+        shell: bash
+        run: |
+          ls -l asr-cpu
+          python - <<'PY'
+          import glob, re, zipfile
+          (path,) = glob.glob("asr-cpu/kitten_inference_asr_cpu-*-py3-none-*.whl")
+          names = [n for n in zipfile.ZipFile(path).namelist() if ".dist-info/" not in n]
+          assert names and all(re.fullmatch(r"kitten_inference/_asr_cpu/(LICENSE-llama\.cpp|lib/[^/]+)", n) for n in names), names
+          assert any(re.fullmatch(r"kitten_inference/_asr_cpu/lib/(libkasr\.(so|dylib)|kasr\.dll)", n) for n in names), names
+          print(path, len(names), "files")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: asr-cpu-${{ matrix.family }}
+          path: asr-cpu/*.whl
           if-no-files-found: error
 
   lock:
@@ -277,7 +376,7 @@ jobs:
 
   assemble:
     name: Assemble the kitten-inference wheels
-    needs: [build, lock]
+    needs: [build, lock, asr-cpu]
     if: needs.lock.outputs.assemble == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -294,6 +393,18 @@ jobs:
         with:
           name: dist
           path: dist
+      - name: The ASR CPU engine wheels of this commit (job asr-cpu), next to the other wheels built here
+        uses: actions/download-artifact@v4
+        with:
+          pattern: asr-cpu-*
+          path: dist
+          merge-multiple: true
+      - name: Every platform's ASR CPU engine wheel is here (a missing one is a warning; a release (tag) run refuses it)
+        shell: bash
+        run: |
+          for p in manylinux_2_28_x86_64 manylinux_2_28_aarch64 macosx_11_0_arm64; do
+            ls dist/kitten_inference_asr_cpu-*-py3-none-*${p}*.whl > /dev/null 2>&1 || echo "::warning::no speech recognition CPU engine wheel for ${p}: those wheels ship without it"
+          done
       - name: TTS 0.8 wheels (the artifacts of the engines/lite run in the lock)
         uses: actions/download-artifact@v4
         with:
@@ -325,7 +436,7 @@ jobs:
           python .github/scripts/assemble_wheels.py build --lock .github/release-inputs.json --inputs in --pure dist
           --source . --out assembled ${{ startsWith(github.ref, 'refs/tags/v') && '--tag-run' || '' }}
       - name: Independent check of the assembled wheels (engine files byte for byte against the lock)
-        run: python .github/scripts/check_assembled.py --lock .github/release-inputs.json --inputs in --source . assembled/*.whl
+        run: python .github/scripts/check_assembled.py --lock .github/release-inputs.json --inputs in --source . --asr-cpu dist assembled/*.whl
       - name: The wheels are the set a release uploads (pypi_ready.COMPLETE)
         run: python .github/scripts/pypi_ready.py complete --dist kitten-inference assembled/*.whl
       - name: Metadata (twine) and sizes (PyPI's file limit is 100 MB)
@@ -395,6 +506,7 @@ jobs:
     # The wheel pip picks on each runner, installed from a local wheelhouse of the packages its
     # metadata names. TTS 0.8 everywhere: unit tests and an audio check. TTS 2 runs on Linux x86-64 and Windows x64
     # with Python 3.9 or newer: there its unit tests run (no GPU); elsewhere Kitten TTS 2 must say so when it starts.
+    # The ASR files are in every wheel: their unit tests (no GPU, no PyTorch) run everywhere.
     name: Test, ${{ matrix.os }}, Python ${{ matrix.python }}
     needs: [build, assemble]
     strategy:
@@ -520,13 +632,24 @@ jobs:
           root = Path(kitten_inference.__file__).parent
           want = {"_tts2_cuda": tts2 and family in ("linux-x86_64", "windows-x86_64"),
                   "_tts2_rocm": tts2 and family == "linux-x86_64"}
-          for sub in ("tts08", "tts2"):
+          for sub in ("tts08", "tts2", "asr"):
               assert (root / sub / "__init__.py").is_file(), sub
           for sub, present in want.items():
               assert (root / sub / "__init__.py").is_file() == present, f"{sub}: {'missing' if present else 'unexpected'}"
-          print(f"{wheel}: tags {sorted(tags)}; engines: {', '.join(s for s, p in want.items() if p) or 'none'}")
+          # The speech recognition CPU engine: in the manylinux_2_28 (x86-64, arm64), Windows x64 and macOS arm64 wheels for CPython
+          # 3.10 or newer, and in no other wheel. Where it is, the library loads and answers (no model needed).
+          cpu = int(py[3:]) >= 10 and any(p in plats.split(".") for p in
+                                          ("manylinux_2_28_x86_64", "manylinux_2_28_aarch64", "macosx_11_0_arm64", "win_amd64"))
+          assert (root / "_asr_cpu" / "lib").is_dir() == cpu, f"_asr_cpu: {'missing' if cpu else 'unexpected'}"
+          if cpu:
+              from kitten_inference.asr import _cpu
+              ok, why = _cpu.available()
+              assert ok, why
+              assert _cpu._lib().kasr_api_version() == _cpu.API_VERSION
+          print(f"{wheel}: tags {sorted(tags)}; engines: {', '.join(s for s, p in want.items() if p) or 'none'}; "
+                f"speech recognition CPU engine: {'yes' if cpu else 'no'}")
           PY
-      - name: Unit tests (installed package; TTS 2's where it runs, tests/gpu skipped, no other test may skip)
+      - name: Unit tests (installed package; TTS 2's where it runs, ASR's everywhere, tests/gpu skipped, no other test may skip)
         shell: bash
         env:
           KT2N_REQUIRE_ABI_TEST: "1"
@@ -535,7 +658,7 @@ jobs:
           KT2N_EXPECT_NO_NVIDIA_DRIVER: "1"
         run: |
           export KITTEN_RELEASE_WHEEL=1
-          tests=("$GITHUB_WORKSPACE/tests/packaging" "$GITHUB_WORKSPACE/tests/test_unified.py")
+          tests=("$GITHUB_WORKSPACE/tests/packaging" "$GITHUB_WORKSPACE/tests/test_unified.py" "$GITHUB_WORKSPACE/tests/asr")
           if [ "$TTS2" = 1 ]; then tests+=("$GITHUB_WORKSPACE/tests/tts2"); fi
           cd "$RUNNER_TEMP"
           "$GITHUB_WORKSPACE/$PY" -m pytest -q -rs -p no:cacheprovider "${tests[@]}"
@@ -560,7 +683,7 @@ jobs:
             if [ -x other/Scripts/python.exe ]; then OPY=other/Scripts/python.exe; else OPY=other/bin/python; fi
             "$OPY" -m pip install -q --disable-pip-version-check --no-index --find-links deps -U pip
             "$OPY" -m pip install -q --disable-pip-version-check --no-index --find-links deps "${w}"
-            "$OPY" -c "import kitten_inference.tts08, kitten_inference.tts2; print('TTS 0.8 and TTS 2 import')"
+            "$OPY" -c "import kitten_inference.tts08, kitten_inference.tts2, kitten_inference.asr; print('TTS 0.8, TTS 2 and ASR import')"
             "$OPY" tests/tts08/audio_smoke.py --mode release --out-dir audio-smoke-other --cache-dir .hf-cache \
               --expect-backend cpu
             echo "::endgroup::"
@@ -585,6 +708,7 @@ jobs:
           cd "$RUNNER_TEMP"
           "$GITHUB_WORKSPACE/$BPY" - <<'PY'
           import os, sys
+          from pathlib import Path
 
           def error(code):
               try:
@@ -594,7 +718,7 @@ jobs:
               return None
 
           family = os.environ["FAMILY"]
-          checks = [("import kitten_inference.tts2", None)]
+          checks = [("import kitten_inference.tts2", None), ("import kitten_inference.asr", None)]
           checks.append(("from kitten_inference.tts08 import KittenTTS", ["kitten-inference"]))
           if sys.version_info < (3, 9):
               checks.append(("from kitten_inference.tts2 import KittenTTS2", ["3.9"]))
@@ -608,6 +732,15 @@ jobs:
               ok = got is None if want is None else got is not None and all(w in got for w in want)
               print(f"{'ok  ' if ok else 'FAIL'} {code}: {got or 'works'}")
               bad += not ok
+          # The ASR files are in the wheels of every Python: each must compile on this one (3.8 included).
+          import kitten_inference.asr
+          for path in sorted(Path(kitten_inference.asr.__file__).parent.rglob("*.py")):
+              try:
+                  compile(path.read_text(encoding="utf-8"), str(path), "exec")
+              except SyntaxError as exc:
+                  print(f"FAIL kitten_inference/asr/{path.name} does not compile on Python "
+                        f"{sys.version_info[0]}.{sys.version_info[1]}: {exc}")
+                  bad += 1
           sys.exit(1 if bad else 0)
           PY
 
@@ -654,7 +787,8 @@ jobs:
           cd "$RUNNER_TEMP"
           "$GITHUB_WORKSPACE/$PY" -m pytest -q -rs -p no:cacheprovider "$GITHUB_WORKSPACE/tests/packaging" \
             "$GITHUB_WORKSPACE/tests/tts2" "$GITHUB_WORKSPACE/tests/tts08" "$GITHUB_WORKSPACE/tests/test_unified.py" \
-            "$GITHUB_WORKSPACE/tests/test_stream_chunks.py" "$GITHUB_WORKSPACE/tests/test_family_consistency.py"
+            "$GITHUB_WORKSPACE/tests/test_stream_chunks.py" "$GITHUB_WORKSPACE/tests/test_family_consistency.py" \
+            "$GITHUB_WORKSPACE/tests/asr"
       - name: Kitten TTS 2 mini, nano and pico tests on the package built from source
         shell: bash
         run: |
@@ -930,7 +1064,7 @@ jobs:
         run: |
           cd "$RUNNER_TEMP"
           "$GITHUB_WORKSPACE/venv/bin/python" -m pytest -q -rs -p no:cacheprovider "$GITHUB_WORKSPACE/tests/packaging" \
-            "$GITHUB_WORKSPACE/tests/tts2"
+            "$GITHUB_WORKSPACE/tests/tts2" "$GITHUB_WORKSPACE/tests/asr"
 
   espeak-paths:
     # espeak-ng ends the Python process (exit 1, no exception) when its data folder path is 160 bytes or longer, and on

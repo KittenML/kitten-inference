@@ -27,13 +27,31 @@ def hooks(part):
             if part == 'metadata':
                 for p in (ROOT / 'src/kitten_inference').glob('*.py'):
                     shutil.copy2(p, target / p.name)
+            elif part == 'asr_cpu':
+                # The speech recognition CPU engine: compiled libraries only (kitten_inference/_asr_cpu, installed by
+                # engines/asr-cpu/CMakeLists.txt), no Python files and no dependencies. Tagged py3-none-<platform>.
+                project['name'] += '-asr-cpu'
+                project['version'] = project['version'].split('.post', 1)[0]
+                project['dependencies'] = []
+                project.pop('scripts', None)
+                target.rmdir()
+                shutil.copytree(ROOT / 'engines/asr-cpu', stage / 'asr-cpu', ignore=shutil.ignore_patterns('python'))
+                shutil.copy2(ROOT / 'engines/asr/NOTICE', stage / 'NOTICE')
+                project['license-files'] = ['LICENSE', 'NOTICE', 'asr-cpu/llama.cpp/LICENSE']
+                config['tool'] = {'scikit-build': {
+                    'cmake': {'build-type': 'Release', 'source-dir': 'asr-cpu'}, 'build': {'targets': ['kasr']},
+                    'install': {'components': ['python']}, 'wheel': {'packages': [], 'py-api': 'py3'},
+                    'sdist': {'include': ['asr-cpu', 'LICENSE', 'NOTICE', 'README.md', 'pyproject.toml']}}}
+                from scikit_build_core import build as backend
             else:
                 project['name'] += '-' + part
                 # Post releases reuse the locked native builds; internal inputs keep their base version.
                 project['version'] = project['version'].split('.post', 1)[0]
                 project.pop('scripts', None)
                 shutil.copytree(ROOT / 'src/kitten_inference' / part, target / part)
-            if part == 'tts08':
+            if part == 'asr_cpu':
+                pass
+            elif part == 'tts08':
                 # Kitten TTS 2 mini/nano/pico run on this engine, so their Python package ships with it.
                 shutil.copytree(ROOT / 'src/kitten_inference/tts2_tiny', target / 'tts2_tiny')
                 shutil.copy2(ROOT / 'engines/lite/NOTICE', stage / 'NOTICE')
@@ -43,6 +61,9 @@ def hooks(part):
                 config['tool'] = {'scikit-build': dict(config['tool']['scikit-build'])}
                 opts = config['tool']['scikit-build']
                 opts['cmake']['source-dir'] = 'engine'
+                # This wheel holds the TTS engine only. The speech recognition CPU engine (the root project's "kasr"
+                # target) is built once per platform by engines/asr-cpu and added when the wheels are assembled.
+                opts['build'] = dict(opts.get('build', {}), targets=['_engine'])
                 opts['wheel']['packages'] = {'kitten_inference/tts08': 'kitten_inference/tts08',
                                              'kitten_inference/tts2_tiny': 'kitten_inference/tts2_tiny'}
                 from scikit_build_core import build as backend

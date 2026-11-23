@@ -97,6 +97,41 @@ kitten-tts --model KittenML/kitten-tts-2 --prepare-only --with-cloning
 
 `python -m kitten_inference` is equivalent. Use `kitten-tts --model MODEL --help` for model-specific options. TTS 0.8 accepts text or a UTF-8 text file, voice listing, backend/cache selection, speed, and normalization. TTS 2 also supports output formats, reports, streaming, repeat/concurrency/thread controls, sampling, voice-cache limits, and cloning. TTS 0.8, mini, nano and pico take `--backend`, `--precision`, `--low-memory`, `--language` and `--normalize`; for mini, nano and pico `--list-voices` prints one line per language (`--language de` lists one). Use `--cache-dir` to choose the cache location and, for TTS 2, `--revision` to pin a model version (mini, nano and pico: `revision=` in Python).
 
+## Speech to text
+
+`KittenASR` runs on an NVIDIA GPU (Linux and Windows x64, with CUDA-enabled PyTorch), on the CPU (Linux x86-64 and arm64, Windows x64, and Macs with Apple silicon, without PyTorch) and on the Mac GPU; Python 3.10 or newer. See [Kitten ASR](../engines/asr/README.md) and, for precisions, speed and limits, the [engine README](../engines/asr/README.md). When it loads a model it checks what the backend needs and says which part is missing.
+
+```python
+from kitten_inference import KittenASR
+
+asr = KittenASR("KittenML/kitten-asr-tiny")            # an NVIDIA GPU when it can use one, otherwise the CPU
+text = asr.transcribe("meeting.wav")
+texts = asr.transcribe(["a.wav", "b.wav"])
+result = asr.transcribe(audio_array, sample_rate=48000, language="English", details=True)
+
+with asr.stream() as s:
+    update = s.push(chunk_16k_float32)
+    final = s.finish()
+
+asr.close()
+```
+
+- `KittenASR(model, backend=None, precision=None, cache_dir=None)` loads a model. A model is required: `KittenML/kitten-asr-tiny` (0.3B), `KittenML/kitten-asr-small-enhanced` (0.6B), or a local model folder.
+  - `backend`: `None` picks an NVIDIA GPU when PyTorch is installed and finds one that can run the model, and otherwise the CPU engine (on a Mac with Apple silicon, the Mac GPU). `"cuda"`, `"cpu"` and `"metal"` name one; a named backend that cannot run here raises (`ImportError` when a package is missing, `RuntimeError` when the hardware or system is) and never falls back. Any other value raises `ValueError`.
+  - `precision`: `None` is the backend's default. On an NVIDIA GPU: `"bf16"` (default, the published weights), `"fp16"`, `"int8"`. On the CPU and the Mac GPU: `"q8_0"` (default, 8-bit weights), `"f16"`, `"bf16"`. Small-enhanced also accepts its published `"int4"` and `"int8"` weights on every backend. See [published precisions](../engines/asr/README.md#published-int4-and-int8).
+  - `system_prompt`: `"auto"` (default) uses the system message the model folder sets in `asr_config.json`, if it has one (otherwise none); `"none"` never sends one. On the command line: `--system-prompt auto|none`.
+  - `asr.capabilities` reports `backend`, `precision`, `device`, `system_prompt` (where the system message came from) and more.
+  - Engine options are passed by keyword: for the CPU engine `threads` and `batch` (pieces of audio decoded together: 8 by default for tiny, 1 for small-enhanced); for the GPU engine `process=True` (Linux only, the engine in a process of its own) and `device`.
+- `transcribe(audio, sample_rate=None, language=None, details=False)` takes a file path, or a NumPy array of float or int16 samples with `sample_rate` (16000 when omitted), and returns the text. A list is transcribed in one call and returns a list. `language` is a name such as `"English"`; without it the model detects the language. `details=True` returns a `Transcript` (`text`, `language`, `segments`, `raw`). Audio longer than 30 s is cut at quiet points and the texts are joined; a piece whose text ends in the same words repeated many times keeps one copy.
+- `stream(language=None, step=0.5, max_window=20.0, speech_gate=True)` opens a session for live audio. `push(chunk)` takes mono samples at 16 kHz and returns a `StreamUpdate`, or `None` when the chunk only went into the buffer: `committed` is final, `partial` may still change, and `text` is both together. `finish()` returns the full text. No update is made before the first sound clearly louder than the background (`speech_gate=False` turns that off).
+- `close()` is safe to call repeatedly; closed instances reject calls. Instances support context managers.
+
+```sh
+kitten-asr --model KittenML/kitten-asr-tiny meeting.wav --language English --json
+```
+
+Several files may be given. `--language NAME`, `--backend cuda|cpu|metal`, `--precision P`, `--cache-dir DIR` and `--json` (one JSON object per file: `file`, `text`, `language`, `segments`) are optional; `python -m kitten_inference.asr` is the same command. For servers, `kitten_inference.asr.Engine` (`decode`, `release`, `snapshot`) and `EngineProcess` are the NVIDIA GPU engine below `KittenASR`: see the [engine README](../engines/asr/README.md#servers).
+
 ## Source builds
 
-`pip install .` builds the TTS 0.8 extension. Source installs do not include TTS 2 GPU binaries; use the PyPI package for GPU inference, or follow the [native build instructions](../engines/tts2/README.md#build-from-source).
+`pip install .` builds the TTS 0.8 extension and, on Linux, Windows x64 and macOS, the speech recognition CPU engine (`-C cmake.define.KITTEN_BUILD_ASR_CPU=OFF` leaves it out). Source installs do not include TTS 2 GPU binaries; use the PyPI package for GPU inference, or follow the [native build instructions](../engines/tts2/README.md#build-from-source).

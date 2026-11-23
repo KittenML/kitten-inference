@@ -58,6 +58,11 @@ jobs:
       - name: Kitten TTS 2 mini, nano and pico README block
         shell: bash
         run: python tests/docs_commands.py --family tts2_tiny --project "$TEST_PROJECT" --version "$TEST_VERSION" --out "$RUNNER_TEMP/kitten-user-tiny"
+      # The CPU engine of Kitten ASR is in the Linux (x86-64, arm64) and Apple silicon macOS packages.
+      - name: Kitten ASR README block (text to speech makes the recording, speech to text reads it back)
+        if: runner.os == 'Linux' || matrix.os == 'macos-14'
+        shell: bash
+        run: python tests/docs_commands.py --family asr --project "$TEST_PROJECT" --version "$TEST_VERSION" --out "$RUNNER_TEMP/kitten-user-asr"
       - name: Kitten TTS 2 mini in English and Japanese (Japanese gives the documented error on Windows on Arm)
         if: matrix.python == '3.14'
         shell: bash
@@ -93,3 +98,4 @@ jobs:
             ${{ runner.temp }}/kitten-user/*.wav
             ${{ runner.temp }}/kitten-user/evidence*/
             ${{ runner.temp }}/kitten-user-tiny/
+            ${{ runner.temp }}/kitten-user-asr/

@@ -52,7 +52,8 @@ def engines_here() -> dict:
 
 
 def subpackages() -> set:
-    return {"tts08", "tts2", "tts2_tiny"} | {name for name, here in engines_here().items() if here}
+    # tts08, tts2, tts2_tiny and asr (Python only) are in every wheel; the GPU engine folders only where they run.
+    return {"tts08", "tts2", "tts2_tiny", "asr"} | {name for name, here in engines_here().items() if here}
 
 
 def expected(pip_version: tuple) -> dict:

@@ -51,7 +51,7 @@ def test_metadata():
                 "spacy", "regex", "addict", "jaconv", "fugashi"}
     assert {canonicalize_name(r.name) for r in requires} == expected
     scripts = {ep.name: ep.value for ep in dist.entry_points if ep.group == "console_scripts"}
-    assert scripts == {"kitten-tts": "kitten_inference._cli:main"}
+    assert scripts == {"kitten-tts": "kitten_inference._cli:main", "kitten-asr": "kitten_inference.asr._cli:main"}
 
 
 def test_one_package_holds_everything():

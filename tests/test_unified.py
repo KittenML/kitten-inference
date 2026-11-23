@@ -141,12 +141,13 @@ def test_dependency_markers():
     from importlib.metadata import requires
     from packaging.requirements import Requirement
     reqs = list(map(Requirement, requires('kitten-inference')))
-    for version, platform, machine, gpu in [('3.8','linux','x86_64',False), ('3.12','linux','x86_64',True),
-        ('3.12','win32','AMD64',True), ('3.12','darwin','arm64',False), ('3.12','linux','aarch64',False)]:
+    # gpu: the Kitten TTS 2 GPU engine's platforms; tokenizers also on Linux arm64 (speech to text on NVIDIA GPUs)
+    for version, platform, machine, gpu, tok in [('3.8','linux','x86_64',False,False), ('3.12','linux','x86_64',True,True),
+        ('3.12','win32','AMD64',True,True), ('3.12','darwin','arm64',False,False), ('3.12','linux','aarch64',False,True)]:
         env = dict(python_version=version, sys_platform=platform, platform_machine=machine, extra='')
         selected = {r.name.replace('_','-') for r in reqs if r.marker is None or r.marker.evaluate(env)}
         assert {'numpy','huggingface-hub','soundfile','phonemizer','espeakng-loader'} <= selected
-        assert ('tokenizers' in selected) == gpu
+        assert ('tokenizers' in selected) == tok
         assert ('filelock' in selected) == gpu
         # Kitten TTS 2 mini/nano/pico English and Japanese text: CPython 3.10 to 3.14
         front_end = {'spacy', 'regex', 'addict', 'fugashi', 'jaconv'}

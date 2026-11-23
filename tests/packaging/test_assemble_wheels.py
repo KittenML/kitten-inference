@@ -127,6 +127,7 @@ def test_one_new_dist_info(built):
             "engines/tts2/include/kt2n/post/atempo.h"]
         assert "Root-Is-Purelib: false" in z.read(f"{INFO}/WHEEL").decode()
         assert b"kitten-tts = kitten_inference._cli:main" in z.read(f"{INFO}/entry_points.txt")
+        assert b"kitten-asr = kitten_inference.asr._cli:main" in z.read(f"{INFO}/entry_points.txt")
         assert (f"{INFO}/DELVEWHEEL" in names) == p.name.endswith("win_amd64.whl")
     assert len(metadata) == 1
 
@@ -307,8 +308,15 @@ def test_only_the_overlay_python_may_change(world):
         world.build("refused")
 
 
+def _every_cpu_engine(world):
+    for plat in ("manylinux_2_27_x86_64.manylinux_2_28_x86_64", "manylinux_2_28_aarch64", "macosx_11_0_arm64",
+                 "win_amd64"):
+        world.add(world.pure, *world.asr_cpu(plat))
+
+
 def test_a_tag_run_needs_the_tested_tree(world, monkeypatch):
     _, _, li = stub.scripts()
+    _every_cpu_engine(world)
     monkeypatch.delenv("GITHUB_REPOSITORY", raising=False)
     with pytest.raises(SystemExit, match="tested_packaged_trees is not filled in"):
         world.build("a", tag_run=True)
@@ -422,3 +430,208 @@ def test_build_backends_may_normalize_dependency_names(world):
     public = SimpleNamespace(metadata=b'Name: kitten-inference\n', requires=stub.UMBRELLA_REQUIRES)
     normalized = [r.replace('espeakng_loader', 'espeakng-loader') for r in public.requires]
     aw.check_requirements(public, normalized, normalized)
+
+
+# The ASR part: Python files only, the same in every wheel
+
+
+ASR = "kitten_inference_asr-0.2.0-py3-none-any.whl"
+ASR_SOURCE = {"kitten_inference/asr/" + p[len("src/kitten_inference/asr/"):]: d for p, d in stub.SOURCE.items()
+              if p.startswith("src/kitten_inference/asr/")}
+
+
+def test_asr_python_files_are_in_every_wheel(built):
+    world, out = built
+    assert "kitten_inference/asr/__init__.py" in ASR_SOURCE and len(ASR_SOURCE) > 1
+    wheels = sorted(out.glob("*.whl"))
+    assert len(wheels) == len(stub.TTS08)
+    for p in wheels:  # cp38, macOS, Windows and Android too: no platform or Python is left out
+        z = zipfile.ZipFile(p)
+        names = z.namelist()
+        assert {n: z.read(n) for n in names if n.startswith("kitten_inference/asr/")} == ASR_SOURCE, p.name
+        for name in ASR_SOURCE:  # a raw copy of the build input's member, with its RECORD row
+            assert raw(p, name) == raw(world.pure / ASR, name)
+        rows = [line for line in record_lines(world.pure / ASR) if line.startswith("kitten_inference/asr/")]
+        assert len(rows) == len(ASR_SOURCE) and set(rows) <= set(record_lines(p))
+        assert z.read(f"{INFO}/licenses/asr/NOTICE") == stub.SOURCE["engines/asr/NOTICE"]
+        assert not any(n.startswith("kitten_inference_asr-") for n in names)  # only the Python files are taken
+    report = json.loads((out / "assembly-report.json").read_text(encoding="utf-8"))
+    used = {"file": ASR, "part": "pure", "sha256": sha(world.pure / ASR)}
+    assert all(used in w["inputs"] for w in report["wheels"])
+
+
+@pytest.mark.parametrize("file, extra, match", [
+    (ASR, "kitten_inference/tts2/x.py", r"kitten_inference/tts2/x\.py is outside kitten_inference/asr/"),
+    (ASR, "kitten_inference/x.py", r"kitten_inference/x\.py is outside kitten_inference/asr/"),
+    (ASR, "kitten_inference/asr/_kernel.so", r"_kernel\.so is not a \.py file"),
+    (ASR, "kitten_inference/asr/data/table.json", r"table\.json is not a \.py file"),
+    ("kitten_inference_tts2-0.2.0-py3-none-any.whl", "kitten_inference/asr/x.py",
+     r"kitten_inference/asr/x\.py is outside kitten_inference/tts2/"),
+    ("kitten_inference-0.2.0-py3-none-any.whl", "kitten_inference/asr/x.py",
+     r"expected only kitten_inference/__init__.py"),
+])
+def test_asr_files_come_only_from_the_asr_part_and_are_python(world, file, extra, match):
+    world.rewrite(file, world.members(file) + [stub.M(extra, b"x = 1\n")], relock=False)
+    with pytest.raises(SystemExit, match=match):
+        world.build()
+
+
+def test_the_asr_part_is_required(world):
+    members = [m for m in world.members(ASR) if m.name != "kitten_inference/asr/__init__.py"]
+    world.rewrite(ASR, members, relock=False)
+    with pytest.raises(SystemExit, match="no kitten_inference/asr/__init__.py"):
+        world.build("a")
+    (world.pure / ASR).unlink()
+    with pytest.raises(SystemExit, match=r"one kitten_inference_asr-\*-py3-none-any\.whl \(found 1, 1 and 0\)"):
+        world.build("b")
+
+
+def test_the_asr_part_keeps_the_base_version_and_the_root_requirements(tmp_path):
+    world = stub.World(tmp_path / "version")
+    (world.pure / ASR).unlink()
+    world.add(world.pure, *world.asr(version="0.3.0"))
+    with pytest.raises(SystemExit, match=r"kitten_inference_asr-0\.3\.0-py3-none-any\.whl: version 0\.3\.0, the lock "
+                                         r"is for 0\.2\.0"):
+        world.build()
+    # The engine needs PyTorch at run time, but the package must not require it: the metadata stays the root's.
+    world = stub.World(tmp_path / "requires")
+    world.rewrite(ASR, world.asr(requires=list(stub.UMBRELLA_REQUIRES) + ["torch>=2.4"])[1], relock=False)
+    with pytest.raises(SystemExit, match="root dependency table"):
+        world.build()
+
+
+def test_check_assembled_compares_the_asr_files_with_the_source(world):
+    out = world.build()
+    rewrite_member(out / MAC, "kitten_inference/asr/_engine.py", b"def decode():\n    return 'other'\n")
+    problems, _ = world.check(out)
+    assert [p for p in problems if "kitten_inference/asr/" in p] == [
+        f"{MAC}: kitten_inference/asr/_engine.py differs from src/kitten_inference/asr/_engine.py"], problems
+    # A module added to the source after the wheels were made is missing from every one of them.
+    world.commit({"src/kitten_inference/asr/_new.py": b"y = 1\n"}, "a new ASR module")
+    problems, _ = world.check(out)
+    missing = [p for p in problems if "kitten_inference/asr/ differs from the source's files: "
+               "['kitten_inference/asr/_new.py']" in p]
+    assert len(missing) == len(stub.TTS08), problems
+
+
+def test_a_tag_run_refuses_asr_files_other_than_the_tested_ones(world, monkeypatch):
+    aw, _, li = stub.scripts()
+    _every_cpu_engine(world)
+    assert {"src/kitten_inference", "engines/asr/python", "engines/asr/NOTICE"} <= set(aw.TESTED_TREE_PATHS)
+    monkeypatch.delenv("GITHUB_REPOSITORY", raising=False)
+    li.main(["--set-tested-trees", world.release_commit, "--out", str(world.lock_path), "--source",
+             str(world.source)])
+    world.build("a", tag_run=True)
+    world.commit({"engines/asr/NOTICE": b"ASR notices, changed\n"}, "notice")
+    with pytest.raises(SystemExit, match="differ from the tested tree.*engines/asr/NOTICE"):
+        world.build("b", tag_run=True)
+    world.commit({"engines/asr/NOTICE": stub.SOURCE["engines/asr/NOTICE"],
+                  "src/kitten_inference/asr/_engine.py": b"def decode():\n    return 'changed'\n"}, "engine")
+    with pytest.raises(SystemExit, match="differ from the tested tree.*src/kitten_inference"):
+        world.build("c", tag_run=True)
+
+
+def test_the_licence_lists_name_the_same_notices():
+    # The NOTICE files are listed by hand in pyproject.toml, in both scripts, in the stand-in source and in the root
+    # NOTICE: a new engine's NOTICE must be added to all of them together.
+    aw, _, _ = stub.scripts()
+    root = stub.SCRIPTS.parents[1]
+    declared = {p for p in stub.tomllib.loads(stub.ROOT_PROJECT)["project"]["license-files"] if "*" not in p}
+    assert declared == set(aw.LICENCE_FILES)
+    assert declared <= set(stub.SOURCE)
+    check = (stub.SCRIPTS / "check_assembled.py").read_text(encoding="utf-8")
+    notice = (root / "NOTICE").read_text(encoding="utf-8")
+    for path in sorted(declared):
+        assert (root / path).is_file(), path
+        assert f'"{path}"' in check, path
+        if path.startswith("engines/"):
+            assert path in notice, path
+    assert "engines/asr/NOTICE" in declared
+
+
+# ---------------------------------------------------------------- the speech recognition CPU engine (per platform)
+CPU_LINUX = "kitten_inference_asr_cpu-0.2.0-py3-none-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl"
+CPU_MAC = "kitten_inference_asr_cpu-0.2.0-py3-none-macosx_11_0_arm64.whl"
+
+
+def cpu_files(path: Path) -> dict:
+    with zipfile.ZipFile(path) as z:
+        return {n: z.read(n) for n in z.namelist() if n.startswith("kitten_inference/_asr_cpu/")}
+
+
+def test_a_tag_run_refuses_a_platform_without_its_cpu_engine(world, monkeypatch):
+    _, _, li = stub.scripts()
+    monkeypatch.delenv("GITHUB_REPOSITORY", raising=False)
+    li.main(["--set-tested-trees", world.release_commit, "--out", str(world.lock_path), "--source",
+             str(world.source)])
+    world.add(world.pure, *world.asr_cpu())
+    with pytest.raises(SystemExit, match="no speech recognition CPU engine wheel for manylinux_2_28_aarch64, macosx_11_0_arm64, win_amd64"):
+        world.build("a", tag_run=True)
+    world.build("b")  # a run that is not a tag run assembles without them
+
+
+def test_without_a_cpu_engine_wheel_no_wheel_carries_one(built):
+    world, out = built
+    assert all(cpu_files(p) == {} for p in out.glob("*.whl"))
+    assert json.loads((out / "assembly-report.json").read_text(encoding="utf-8"))["asr_cpu"] == {}
+
+
+def test_the_cpu_engine_goes_into_its_platform_from_cp310(world):
+    world.add(world.pure, *world.asr_cpu())
+    world.add(world.pure, *world.asr_cpu("macosx_11_0_arm64"))
+    win_input, *payload = world.asr_cpu("win_amd64")
+    world.add(world.pure, win_input, *payload)
+    out = world.build()
+    linux, mac = cpu_files(world.pure / CPU_LINUX), cpu_files(world.pure / CPU_MAC)
+    assert len(linux) == len(mac) == 3 and "kitten_inference/_asr_cpu/lib/libkasr.dylib" in mac
+    win = cpu_files(world.pure / win_input)
+    assert len(win) == 3 and "kitten_inference/_asr_cpu/lib/kasr.dll" in win
+    inputs = {LINUX: CPU_LINUX, MAC: CPU_MAC, WINDOWS: win_input}
+    with_engine = {}
+    for p in sorted(out.glob("*.whl")):
+        got = cpu_files(p)
+        if got:
+            with_engine[p.name] = got
+            for name in got:  # a raw copy: compressed bytes, mode and RECORD row of the CPU engine wheel
+                source = world.pure / inputs[p.name]
+                assert raw(p, name) == raw(source, name)
+                assert next(r for r in record_lines(source) if r.startswith(name + ",")) in record_lines(p)
+    assert with_engine == {LINUX: linux, MAC: mac, WINDOWS: win}
+    report = json.loads((out / "assembly-report.json").read_text(encoding="utf-8"))
+    assert report["asr_cpu"] == {"manylinux_2_28_x86_64": CPU_LINUX, "macosx_11_0_arm64": CPU_MAC, "win_amd64": win_input}
+    used = {w["file"]: [i["file"] for i in w["inputs"] if i["part"] == "asr-cpu"] for w in report["wheels"]}
+    assert all(used[name] == [source] for name, source in inputs.items())
+    # the independent check: passes when told about the CPU engine wheels, fails when a wheel has files it was not told of
+    problems, check = world.check(out, asr_cpu=world.pure)
+    assert problems == [] and check.asr_cpu_wheels == 3
+    problems, _ = world.check(out)
+    assert len(problems) == 3 and all("kitten_inference/_asr_cpu/" in p and "should not be there" in p for p in problems)
+
+
+def test_check_assembled_compares_the_cpu_engine_files(world):
+    world.add(world.pure, *world.asr_cpu())
+    out = world.build()
+    rewrite_member(out / LINUX, "kitten_inference/_asr_cpu/lib/libkasr.so", b"another library")
+    problems, _ = world.check(out, asr_cpu=world.pure)
+    assert any("libkasr.so differs from the CPU engine wheel for manylinux_2_28_x86_64" in p for p in problems)
+
+
+@pytest.mark.parametrize("extra, match", [
+    ("kitten_inference/asr/_fast.py", r"kitten_inference/asr/_fast\.py is outside kitten_inference/_asr_cpu/"),
+    ("kitten_inference/_asr_cpu/__init__.py", r"__init__\.py is outside kitten_inference/_asr_cpu/"),
+    ("kitten_inference/_asr_cpu/lib/sub/libx.so", r"libx\.so is outside kitten_inference/_asr_cpu/"),
+])
+def test_a_cpu_engine_wheel_supplies_only_its_libraries(world, extra, match):
+    world.add(world.pure, *world.asr_cpu(extra=[stub.M(extra, b"x")]))
+    with pytest.raises(SystemExit, match=match):
+        world.build()
+
+
+def test_cpu_engine_wheels_are_checked_before_any_wheel_is_written(world):
+    world.add(world.pure, *world.asr_cpu(version="0.2.1"))
+    with pytest.raises(SystemExit, match=r"version 0\.2\.1, the lock is for 0\.2\.0"):
+        world.build()
+    (world.pure / "kitten_inference_asr_cpu-0.2.1-py3-none-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl").unlink()
+    world.add(world.pure, *world.asr_cpu("win_arm64"))
+    with pytest.raises(SystemExit, match="its platform is none of manylinux_2_28_x86_64"):
+        world.build()

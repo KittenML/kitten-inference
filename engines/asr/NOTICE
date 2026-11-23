@@ -1,0 +1,113 @@
+Kitten ASR inference engine (in the kitten-inference package)
+Copyright 2026 KittenML
+
+The engine (src/kitten_inference/asr/ in this repository, installed as
+kitten_inference/asr/) is KittenML code, licensed under the Apache License,
+Version 2.0 (LICENSE), except that the parts listed below follow or are
+adapted from other projects. It runs speech-to-text models that have an
+audio encoder and a text decoder. On NVIDIA GPUs it is Python code that runs
+on PyTorch. On CPUs and on the GPU of Macs it is a compiled engine
+(engines/asr-cpu/ in this repository, installed as
+kitten_inference/_asr_cpu/), described under "The CPU engine" below.
+
+Code that follows other projects
+--------------------------------
+- Attention kernels. The Triton attention kernels in
+  kitten_inference/asr/_attn.py (prefill, decode in one pass, and decode with
+  the keys cut into pieces plus the step that merges the pieces) follow the
+  structure of the Triton attention kernels in SGLang, whose decode kernel
+  also works in two stages:
+    https://github.com/sgl-project/sglang
+    Apache License, Version 2.0. Copyright 2023-2024 SGLang Team.
+  SGLang's decode kernel is adapted from LightLLM:
+    https://github.com/ModelTC/lightllm
+    Apache License, Version 2.0.
+  The kernels also follow the fused-attention tutorial of Triton:
+    https://github.com/triton-lang/triton
+    MIT License (https://github.com/triton-lang/triton/blob/main/LICENSE).
+  The text of the Apache License, Version 2.0 is in LICENSE.
+
+- Low-precision matrix product. The Triton kernel in
+  kitten_inference/asr/_quant.py (8-bit and 4-bit integer weights, 8-bit
+  float weights and activations) follows the tiling of the matrix
+  multiplication tutorial of Triton (grouped program order, float32
+  accumulation):
+    https://github.com/triton-lang/triton
+    MIT License (https://github.com/triton-lang/triton/blob/main/LICENSE).
+
+- Mel filter bank. _mel_filters in kitten_inference/asr/_loader.py, the
+  Slaney-scale mel filter bank, is adapted from
+  transformers.audio_utils.mel_filter_bank of Hugging Face Transformers:
+    https://github.com/huggingface/transformers
+    Apache License, Version 2.0. Copyright 2023 The HuggingFace Inc. team
+    and the librosa & torchaudio authors.
+
+- Encoder position table. _sinusoid in kitten_inference/asr/_loader.py, the
+  sinusoidal position table of the audio encoder, uses the formula of the
+  `sinusoids` function in OpenAI Whisper:
+    https://github.com/openai/whisper
+    MIT License (https://github.com/openai/whisper/blob/main/LICENSE).
+    Copyright (c) 2022 OpenAI.
+
+The CPU engine
+--------------
+kitten_inference/_asr_cpu/lib/ holds libkasr (engines/asr-cpu/src and
+include: KittenML code, Apache License, Version 2.0) and the libraries it is
+built on, compiled from the copy of llama.cpp in engines/asr-cpu/llama.cpp/
+(commit 9048bad of https://github.com/ggml-org/llama.cpp; KittenML's changes
+to it are marked "kitten:" in the source):
+
+- llama.cpp and ggml (libllama, libmtmd, libggml, libggml-base and the
+  ggml CPU and Metal backends):
+    MIT License. Copyright (c) 2023-2026 The ggml authors.
+    The license text is engines/asr-cpu/llama.cpp/LICENSE, and each wheel
+    that has the CPU engine carries it as
+    kitten_inference/_asr_cpu/LICENSE-llama.cpp.
+- Compiled into libmtmd, from engines/asr-cpu/llama.cpp/vendor/:
+  - miniaudio (https://github.com/mackron/miniaudio), David Reid: public
+    domain or MIT No Attribution (the statements are at the end of
+    vendor/miniaudio/miniaudio.h).
+  - stb_image (https://github.com/nothings/stb), Sean Barrett: public domain
+    or MIT (the statements are at the end of vendor/stb/stb_image.h).
+  - xxHash (vendor/hash/xxhash): BSD 2-Clause License.
+      xxHash Library
+      Copyright (c) 2012-2021 Yann Collet
+      All rights reserved.
+      Redistribution and use in source and binary forms, with or without
+      modification, are permitted provided that the following conditions are
+      met:
+      * Redistributions of source code must retain the above copyright
+        notice, this list of conditions and the following disclaimer.
+      * Redistributions in binary form must reproduce the above copyright
+        notice, this list of conditions and the following disclaimer in the
+        documentation and/or other materials provided with the distribution.
+      THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
+      IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+      TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+      PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+      HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+      SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+      LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+      DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+      THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+      (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+      OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+  - SHA-1 by Steve Reid and SHA-256 by Igor Pavlov (vendor/hash/sha1,
+    vendor/hash/sha256): public domain.
+  - rotate-bits (vendor/hash/rotate-bits): MIT License. Copyright (c) 2021
+    William Casarin.
+
+The model converter (kitten_inference/asr/_gguf.py) writes the GGUF file
+format of ggml with NumPy; it is KittenML code and contains no llama.cpp code.
+
+Not included
+------------
+- Model weights. On first use the package downloads them from Hugging Face
+  (KittenML/kitten-asr-tiny, KittenML/kitten-asr-small-enhanced, or the model
+  you name). They keep the license shown on their Hugging Face pages.
+- PyTorch, which you install separately (pip install torch) under its own
+  license (needed for NVIDIA GPUs only), and the Triton compiler that the package's own attention kernels
+  are compiled with when they are used.
+- The runtime dependencies of kitten-inference (among them NumPy,
+  huggingface-hub, SoundFile and tokenizers), which pip installs separately
+  under their own licenses.

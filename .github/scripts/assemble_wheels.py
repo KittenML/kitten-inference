@@ -6,18 +6,22 @@
         --source . --out OUT [--tag-run]
 
 IN holds the wheels the lock names: the CI artifacts of the runs it records, downloaded into one folder (sub-folders
-are searched too; other files are ignored). DIST holds kitten_inference-<V>-py3-none-any.whl and
-kitten_inference_tts2-<base>-py3-none-any.whl, built by packages.yml from the same commit. --source is the checkout of
-that commit: the overlay Python files and the licence files are read from its HEAD commit with git, so a wheel depends
-on the committed tree only (never on uncommitted changes).
+are searched too; other files are ignored). DIST holds kitten_inference-<V>-py3-none-any.whl,
+kitten_inference_tts2-<base>-py3-none-any.whl and kitten_inference_asr-<base>-py3-none-any.whl, built by packages.yml
+from the same commit, and the speech recognition CPU engine of that commit, one
+kitten_inference_asr_cpu-<base>-py3-none-<platform>.whl per platform it is built for (ASR_CPU_PLATFORMS; a platform
+without one gets wheels without the CPU engine, and the report says so). --source is the checkout of that commit: the overlay Python files and the licence files are read
+from its HEAD commit with git, so a wheel depends on the committed tree only (never on uncommitted changes).
 
 verify-inputs: every file the lock names is in IN, with the locked sha256 and size.
 build: one kitten-inference wheel per TTS 0.8 input W, into OUT, plus OUT/assembly-report.json:
   - W's kitten_inference/tts08/** and kitten_inference_tts08.libs/**, except the lock's tts08_python_overlay files,
     which come from engines/lite/ at HEAD; the umbrella's kitten_inference/__init__.py; the tts2 wheel's
-    kitten_inference/tts2/**; and on CPython 3.9 or newer the engines: CUDA and ROCm for a manylinux_2_28_x86_64 W
-    (whose wheel then carries only that tag), CUDA for win_amd64. A copied member keeps its compressed bytes, date,
-    mode and RECORD row.
+    kitten_inference/tts2/**; the asr wheel's kitten_inference/asr/** (Python files only, the same in every wheel);
+    and on CPython 3.9 or newer the engines: CUDA and ROCm for a manylinux_2_28_x86_64 W (whose wheel then carries
+    only that tag), CUDA for win_amd64; and on CPython 3.10 or newer (speech recognition needs it) the asr_cpu wheel's
+    kitten_inference/_asr_cpu/** when one was built for W's platform. A copied member keeps its compressed bytes,
+    date, mode and RECORD row.
   - a new kitten_inference-<V>.dist-info: the umbrella's METADATA with License-File lines added, WHEEL, the umbrella's
     entry_points.txt, the licence files from the source, W's DELVEWHEEL (Windows), RECORD.
 It refuses before writing any wheel when: an input differs from the lock or from its own RECORD; a member is outside
@@ -67,6 +71,14 @@ ENGINE_FILE = re.compile(r"kitten_inference/_tts2_(cuda|rocm)/(__init__\.py|bin/
 ENGINE_LICENCES = re.compile(r"kitten_inference/_tts2_(cuda|rocm)/licenses/.+")
 TTS08_PREFIXES = ("kitten_inference/tts08/", "kitten_inference/tts2_tiny/", "kitten_inference_tts08.libs/")
 TTS2_PREFIX = "kitten_inference/tts2/"
+ASR_PREFIX = "kitten_inference/asr/"  # Python files only: nothing compiled, so every wheel carries the same ones
+# The speech recognition CPU engine (libkasr on llama.cpp's libraries, loaded with ctypes): one py3-none-<platform>
+# wheel per platform, built by packages.yml (job asr-cpu) from the release commit. It goes into the kitten-inference
+# wheels of that platform for CPython 3.10 or newer; other wheels have no CPU engine (KittenASR says so).
+ASR_CPU_NAME = "kitten-inference-asr-cpu"
+ASR_CPU_FILE = re.compile(r"kitten_inference/_asr_cpu/(LICENSE-llama\.cpp|lib/[^/]+)")
+ASR_CPU_PLATFORMS = ("manylinux_2_28_x86_64", "manylinux_2_28_aarch64", "macosx_11_0_arm64", "win_amd64")
+ASR_MIN_MINOR = 10  # cp310: the oldest CPython speech recognition runs on
 UMBRELLA_FILE = "kitten_inference/__init__.py"
 # The sources each tested build was made from, recorded by lock_inputs.py at the build's commit (lock source_trees):
 # git tree or blob ids, None for a path that does not exist. TTS08_PYTHON is recorded file by file, without the
@@ -79,9 +91,11 @@ ENGINE_SOURCES = {"tts08": ("engines/lite/engine", "engines/lite/CMakeLists.txt"
 TTS08_PYTHON = "src/kitten_inference/tts08"
 # The packaged paths whose git trees the GPU tests and the test-PyPI run used (lock tested_packaged_trees).
 TESTED_TREE_PATHS = ("pyproject.toml", "build_support.py", "src/kitten_inference", "umbrella", "engines/tts2/python", "engines/tts2/tools/kt2n_assets", "src/kitten_inference/tts08", "NOTICE",
-                     "LICENSE", "engines/lite/NOTICE", "engines/lite/licenses", "engines/tts2/NOTICE", "engines/tts2/licenses")
+                     "LICENSE", "engines/lite/NOTICE", "engines/lite/licenses", "engines/tts2/NOTICE", "engines/tts2/licenses",
+                     "engines/asr/python", "engines/asr/NOTICE", "engines/asr-cpu")
 # Licence files: dist-info/licenses/<path> from <path> in the source, so each NOTICE's "licenses/" stays true.
-LICENCE_FILES = ("LICENSE", "NOTICE", "engines/lite/NOTICE", "engines/tts2/NOTICE", "src/kitten_inference/tts2_tiny/frontend/NOTICE")
+LICENCE_FILES = ("LICENSE", "NOTICE", "engines/lite/NOTICE", "engines/tts2/NOTICE", "src/kitten_inference/tts2_tiny/frontend/NOTICE",
+                 "engines/asr/NOTICE")
 LICENCE_DIRS = ("engines/lite/licenses", "engines/tts2/licenses")
 LGPL_SOURCE = {"engines/tts2/licenses/lgpl-source/atempo.cc": "engines/tts2/src/post/atempo.cc",
                "engines/tts2/licenses/lgpl-source/atempo.h": "engines/tts2/include/kt2n/post/atempo.h"}
@@ -431,8 +445,8 @@ def selects(marker, extra: str) -> tuple:
     return tuple(True if marker is None else marker.evaluate(dict(env, extra=extra)) for env in ENVIRONMENTS)
 
 
-def check_requirements(umbrella: Wheel, tts08_requires, tts2_requires):
-    """Internal inputs and the public package use the same root dependency table."""
+def check_requirements(umbrella: Wheel, *inputs_requires):
+    """Internal inputs (TTS 0.8, TTS 2, ASR) and the public package use the same root dependency table."""
     from packaging.requirements import Requirement
     def normalized(lines):
         result = set()
@@ -446,15 +460,17 @@ def check_requirements(umbrella: Wheel, tts08_requires, tts2_requires):
         r = Requirement(line)
         if canonical(r.name).startswith("kitten-inference") or r.url:
             refuse(f"invalid package dependency: {line}")
-    if normalized(umbrella.requires) != normalized(tts08_requires) or normalized(umbrella.requires) != normalized(tts2_requires):
+    public = normalized(umbrella.requires)
+    if any(normalized(lines) != public for lines in inputs_requires):
         refuse("build inputs differ from the root dependency table; rebuild the Python inputs")
 
 
 def check_entry_points(umbrella: bytes, tts2: bytes):
     parser = configparser.ConfigParser(delimiters=("=",), interpolation=None)
     parser.read_string(umbrella.decode())
-    if dict(parser["console_scripts"]) != {"kitten-tts": "kitten_inference._cli:main"}:
-        refuse("expected kitten-tts = kitten_inference._cli:main")
+    if dict(parser["console_scripts"]) != {"kitten-tts": "kitten_inference._cli:main",
+                                           "kitten-asr": "kitten_inference.asr._cli:main"}:
+        refuse("expected kitten-tts = kitten_inference._cli:main and kitten-asr = kitten_inference.asr._cli:main")
 
 
 def licences(src: Source) -> dict:
@@ -469,7 +485,7 @@ def licences(src: Source) -> dict:
         if target in out:
             refuse(f"{target} is in the source and would also be copied from {path}")
         out[target] = src.read(path)
-    return {p.replace("engines/lite/", "tts-0.8/").replace("engines/tts2/", "tts-2/")
+    return {p.replace("engines/lite/", "tts-0.8/").replace("engines/tts2/", "tts-2/").replace("engines/asr/", "asr/")
                 .replace("src/kitten_inference/tts2_tiny/frontend/", "tts-2-tiny/"): value for p, value in out.items()}
 
 
@@ -628,6 +644,31 @@ def select_tts08(w: Wheel, overlay):
     return keep, dropped
 
 
+def asr_cpu_platform(w: Wheel):
+    """The ASR_CPU_PLATFORMS entry among a wheel's platform tags, or None."""
+    plats = {t[2] for t in w.tags}
+    hits = [p for p in ASR_CPU_PLATFORMS if p in plats]
+    return hits[0] if hits else None
+
+
+def select_asr_cpu(p: Wheel):
+    """The files a CPU engine wheel supplies: its libraries and llama.cpp's licence, nothing else."""
+    if p.name != ASR_CPU_NAME:
+        refuse(f"{p.file}: Name is {p.name}, expected {ASR_CPU_NAME}")
+    if {t[:2] for t in p.tags} != {("py3", "none")}:
+        refuse(f"{p.file}: expected a py3-none-<platform> wheel (the libraries are loaded with ctypes)")
+    keep = []
+    for path in sorted(p.members):
+        if path.startswith(p.dist_info + "/"):
+            continue
+        if not ASR_CPU_FILE.fullmatch(path):
+            refuse(f"{p.file}: {path} is outside kitten_inference/_asr_cpu/{{LICENSE-llama.cpp,lib/}}")
+        keep.append(path)
+    if not any(re.fullmatch(r"kitten_inference/_asr_cpu/lib/(lib)?kasr\.(so|dylib|dll)", k) for k in keep):
+        refuse(f"{p.file}: no kasr library under kitten_inference/_asr_cpu/lib/")
+    return keep
+
+
 def select_payload(part: str, p: Wheel):
     prefix = "kitten_inference/_tts2_cuda/" if ENGINE_PARTS[part][1] == "cuda" else "kitten_inference/_tts2_rocm/"
     keep, dropped = [], []
@@ -657,10 +698,25 @@ def build(lock_path: Path, inputs: Path, pure: Path, source: Path, out: Path, ta
     found = find_wheels(pure)
     umbrellas = [p for n, p in found.items() if re.fullmatch(r"kitten_inference-[^-]+-py3-none-any\.whl", n)]
     tts2s = [p for n, p in found.items() if re.fullmatch(r"kitten_inference_tts2-[^-]+-py3-none-any\.whl", n)]
-    if len(umbrellas) != 1 or len(tts2s) != 1:
-        refuse(f"{pure} must hold one kitten_inference-*-py3-none-any.whl and one "
-               f"kitten_inference_tts2-*-py3-none-any.whl (found {len(umbrellas)} and {len(tts2s)})")
-    umbrella, tts2 = Wheel(umbrellas[0]), Wheel(tts2s[0])
+    asrs = [p for n, p in found.items() if re.fullmatch(r"kitten_inference_asr-[^-]+-py3-none-any\.whl", n)]
+    if len(umbrellas) != 1 or len(tts2s) != 1 or len(asrs) != 1:
+        refuse(f"{pure} must hold one kitten_inference-*-py3-none-any.whl, one "
+               f"kitten_inference_tts2-*-py3-none-any.whl and one kitten_inference_asr-*-py3-none-any.whl "
+               f"(found {len(umbrellas)}, {len(tts2s)} and {len(asrs)})")
+    umbrella, tts2, asr = Wheel(umbrellas[0]), Wheel(tts2s[0]), Wheel(asrs[0])
+    asr_cpus = {}  # platform -> (Wheel, its files)
+    for n, p in sorted(found.items()):
+        if re.fullmatch(r"kitten_inference_asr_cpu-[^-]+-py3-none-.+\.whl", n):
+            w = Wheel(p)
+            plat = asr_cpu_platform(w)
+            if plat is None:
+                refuse(f"{w.file}: its platform is none of {', '.join(ASR_CPU_PLATFORMS)}")
+            if plat in asr_cpus:
+                refuse(f"{pure} holds two CPU engine wheels for {plat}")
+            asr_cpus[plat] = (w, select_asr_cpu(w))
+    missing = [p for p in ASR_CPU_PLATFORMS if p not in asr_cpus]
+    if tag_run and missing:   # a release would ship these platforms without speech recognition
+        refuse(f"no speech recognition CPU engine wheel for {', '.join(missing)}")
 
     # Versions: one base version everywhere; the umbrella may be a post release of it (only its version changes).
     version = umbrella.version
@@ -670,7 +726,7 @@ def build(lock_path: Path, inputs: Path, pure: Path, source: Path, out: Path, ta
         refuse(f"kitten-inference {version} is neither {base} (the lock's version) nor a post release of it")
     if umbrella.dist_info != f"kitten_inference-{version}.dist-info":
         refuse(f"{umbrella.file}: its dist-info folder is {umbrella.dist_info}")
-    for w in tts08 + list(payloads.values()) + [tts2]:
+    for w in tts08 + list(payloads.values()) + [tts2, asr] + [c for c, _ in asr_cpus.values()]:
         if w.version != base:
             refuse(f"{w.file}: version {w.version}, the lock is for {base}")
     for w in tts08:
@@ -678,6 +734,8 @@ def build(lock_path: Path, inputs: Path, pure: Path, source: Path, out: Path, ta
             refuse(f"{w.file}: Name is {w.name}, expected kitten-inference-tts08")
     if tts2.name != "kitten-inference-tts2":
         refuse(f"{tts2.file}: Name is {tts2.name}, expected kitten-inference-tts2")
+    if asr.name != "kitten-inference-asr":
+        refuse(f"{asr.file}: Name is {asr.name}, expected kitten-inference-asr")
 
     # The members each input supplies.
     umbrella_files = [p for p in umbrella.members if not p.startswith(umbrella.dist_info + "/")]
@@ -694,6 +752,15 @@ def build(lock_path: Path, inputs: Path, pure: Path, source: Path, out: Path, ta
     outside = [p for p in tts2_files if not p.startswith(TTS2_PREFIX)]
     if outside:
         refuse(f"{tts2.file}: {outside[0]} is outside {TTS2_PREFIX}")
+    asr_files = sorted(p for p in asr.members if not p.startswith(asr.dist_info + "/"))
+    outside = [p for p in asr_files if not p.startswith(ASR_PREFIX)]
+    if outside:
+        refuse(f"{asr.file}: {outside[0]} is outside {ASR_PREFIX}")
+    not_python = [p for p in asr_files if not p.endswith(".py")]
+    if not_python:
+        refuse(f"{asr.file}: {not_python[0]} is not a .py file (the ASR part is Python only)")
+    if f"{ASR_PREFIX}__init__.py" not in asr_files:
+        refuse(f"{asr.file}: no {ASR_PREFIX}__init__.py")
     tts2_entry = f"{tts2.dist_info}/entry_points.txt"
     check_entry_points(umbrella.read(entry_points), tts2.read(tts2_entry) if tts2_entry in tts2.members else b"")
     selected = {part: select_payload(part, p) for part, p in payloads.items()}
@@ -723,7 +790,7 @@ def build(lock_path: Path, inputs: Path, pure: Path, source: Path, out: Path, ta
     # METADATA: the umbrella's, after the drift checks, with every licence file named.
     if len({tuple(sorted(w.requires)) for w in tts08}) != 1:
         refuse("the TTS 0.8 inputs do not all have the same Requires-Dist")
-    check_requirements(umbrella, tts08[0].requires, tts2.requires)
+    check_requirements(umbrella, tts08[0].requires, tts2.requires, asr.requires)
     from packaging.specifiers import SpecifierSet
     requires_python = SpecifierSet(headers(umbrella.metadata)["Requires-Python"] or "")
     lic = licences(src)
@@ -748,9 +815,13 @@ def build(lock_path: Path, inputs: Path, pure: Path, source: Path, out: Path, ta
         members += [written(p, data) for p, data in sorted(overlay.items())]
         members += [copied(umbrella, p) for p in umbrella_files]
         members += [copied(tts2, p) for p in tts2_files]
+        members += [copied(asr, p) for p in asr_files]
         for part in parts:
             members += [copied(payloads[part], p) for p in selected[part][0]]
             dropped += selected[part][1]
+        cpu_plat = asr_cpu_platform(w) if int(py[3:]) >= ASR_MIN_MINOR else None
+        asr_cpu = asr_cpus.get(cpu_plat, (None, []))
+        members += [copied(asr_cpu[0], p) for p in asr_cpu[1]]
         wheel = ("Wheel-Version: 1.0\nGenerator: " + GENERATOR + "\nRoot-Is-Purelib: false\n"
                  + "".join(f"Tag: {'-'.join(t)}\n" for t in tags)).encode()
         members += [written(f"{dist_info}/METADATA", metadata), written(f"{dist_info}/WHEEL", wheel),
@@ -767,18 +838,21 @@ def build(lock_path: Path, inputs: Path, pure: Path, source: Path, out: Path, ta
         record = "\n".join([m.row for m in members] + [f"{dist_info}/RECORD,,"]) + "\n"
         members.append(Member(f"{dist_info}/RECORD", None, "new", data=record.encode("utf-8")))
         inputs_used = [w] + [payloads[p] for p in parts]
-        plans[name] = (w, members, tags, dropped, inputs_used)
+        plans[name] = (w, members, tags, dropped, inputs_used, asr_cpu[0])
 
     out = Path(out)
     out.mkdir(parents=True, exist_ok=True)
     if any(out.iterdir()):
         refuse(f"{out} is not empty")
-    pure_sha = {umbrella.file: file_sha256(umbrella.path), tts2.file: file_sha256(tts2.path)}
+    pure_sha = {umbrella.file: file_sha256(umbrella.path), tts2.file: file_sha256(tts2.path),
+                asr.file: file_sha256(asr.path)}
+    asr_cpu_sha = {c.file: file_sha256(c.path) for c, _ in asr_cpus.values()}
     report = {"version": version, "base_version": base, "commit": src.commit,
               "lock_sha256": file_sha256(Path(lock_path)), "python": platform.python_version(),
-              "zlib": zlib.ZLIB_RUNTIME_VERSION, "inputs_checked": len(lock["inputs"]), "wheels": []}
+              "zlib": zlib.ZLIB_RUNTIME_VERSION, "inputs_checked": len(lock["inputs"]),
+              "asr_cpu": {plat: c.file for plat, (c, _) in sorted(asr_cpus.items())}, "wheels": []}
     for name in sorted(plans):
-        w, members, tags, dropped, inputs_used = plans[name]
+        w, members, tags, dropped, inputs_used, asr_cpu = plans[name]
         path = out / name
         write_zip(path, members)
         sha, size = file_sha256(path), path.stat().st_size
@@ -787,11 +861,15 @@ def build(lock_path: Path, inputs: Path, pure: Path, source: Path, out: Path, ta
             "file": name, "sha256": sha, "size": size, "tags": ["-".join(t) for t in tags],
             "inputs": [{"file": i.file, "part": rows[i.file]["part"], "sha256": rows[i.file]["sha256"]}
                        for i in inputs_used]
-            + [{"file": f, "part": "pure", "sha256": s} for f, s in sorted(pure_sha.items())],
+            + [{"file": f, "part": "pure", "sha256": s} for f, s in sorted(pure_sha.items())]
+            + ([{"file": asr_cpu.file, "part": "asr-cpu", "sha256": asr_cpu_sha[asr_cpu.file]}] if asr_cpu else []),
             "copied": len(members) - len(new), "overlay": sorted(overlay), "new": new, "dropped": sorted(dropped)})
         print(f"{name}  {size} bytes  sha256 {sha}  ({len(members) - len(new)} files copied unchanged, "
               f"{len(new)} written)")
     (out / "assembly-report.json").write_text(json.dumps(report, indent=1) + "\n", encoding="utf-8")
+    with_cpu = sum(1 for plan in plans.values() if plan[5] is not None)
+    print(f"speech recognition CPU engine: in {with_cpu} of {len(plans)} wheels "
+          f"({', '.join(sorted(asr_cpus)) or 'no CPU engine wheel was given'})")
     print(f"{len(lock['inputs'])} inputs match the lock; {len(plans)} wheels in {out}; "
           f"{len(overlay)} Python files from {src.commit[:12]}")
     return report
@@ -806,7 +884,7 @@ def main(argv=None) -> int:
     b = sub.add_parser("build", help="write the kitten-inference wheels")
     b.add_argument("--lock", type=Path, required=True)
     b.add_argument("--inputs", type=Path, required=True)
-    b.add_argument("--pure", type=Path, required=True, help="folder with the umbrella and tts2 wheels")
+    b.add_argument("--pure", type=Path, required=True, help="folder with the umbrella, tts2 and asr wheels")
     b.add_argument("--source", type=Path, required=True, help="checkout of the release commit")
     b.add_argument("--out", type=Path, required=True)
     b.add_argument("--tag-run", action="store_true", help="a v* tag run: the tested tree must match HEAD")

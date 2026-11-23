@@ -1,4 +1,4 @@
-"""Native Kitten speech synthesis: ``KittenTTS(model)`` selects a model explicitly."""
+"""Native Kitten speech synthesis and speech recognition: ``KittenTTS(model)``, ``KittenASR(model)``."""
 __version__ = "0.2.1"
 
 # Internal release inputs may be installed separately during native-engine tests.
@@ -8,6 +8,7 @@ del extend_path
 
 _EXPORTS = {
     'KittenTTS': '._api',
+    'KittenASR': '.asr._api',
     'Voice': '.tts2._api',
     'normalize_text': '.tts08.preprocess',
     'normalize_text_result': '.tts08.preprocess',

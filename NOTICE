@@ -19,11 +19,14 @@ The source-tree locations are:
   (MIT, license text in frontend/en_core_web_sm/LICENSE). That NOTICE lists each part
   and its changes. Every wheel carries it next to that code, as
   kitten_inference/tts2_tiny/frontend/NOTICE.
+- engines/asr/NOTICE: Kitten ASR (speech to text: Python code that runs on
+  PyTorch for NVIDIA GPUs, and a compiled CPU engine built on llama.cpp and
+  ggml, MIT), with the code's origin in engines/asr/PROVENANCE.md.
 
 Assembled release wheels carry these notices and license texts under
-.dist-info/licenses/tts-0.8/, .dist-info/licenses/tts-2/ and
-.dist-info/licenses/tts-2-tiny/. Source-built wheels
+.dist-info/licenses/tts-0.8/, .dist-info/licenses/tts-2/,
+.dist-info/licenses/tts-2-tiny/ and .dist-info/licenses/asr/. Source-built wheels
 retain the engines/ directory names under .dist-info/licenses/.
 
-The weights of the Kitten TTS models are not in this repository; they are
+The weights of the Kitten TTS and Kitten ASR models are not in this repository; they are
 downloaded on first use and keep the licenses on their Hugging Face pages.

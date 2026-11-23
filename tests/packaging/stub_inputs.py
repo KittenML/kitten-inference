@@ -1,7 +1,7 @@
 """Small synthetic inputs for test_assemble_wheels.py, with the layout of the real ones and no real engines: TTS 0.8
 wheels for seven platforms (CRLF RECORD on Linux and macOS, the Windows attributes, CRLF files and delvewheel patch,
 the auditwheel SBOM), the CUDA and ROCm payload wheels (the ROCm one with directory entries and a licenses/ folder),
-the umbrella and tts2 wheels, a git repository standing in for the source (the tested commit, then the release
+the umbrella, tts2 and asr wheels, a git repository standing in for the source (the tested commit, then the release
 commit with the new overlay files), the CI artifact zips, and the lock that lock_inputs.make_lock writes from them.
 No network.
 
@@ -28,7 +28,7 @@ except ImportError:
     import tomli as tomllib
 ROOT_PROJECT = (SCRIPTS.parents[1] / 'pyproject.toml').read_text()
 UMBRELLA_REQUIRES = tomllib.loads(ROOT_PROJECT)['project']['dependencies']
-TTS08_REQUIRES = TTS2_REQUIRES = UMBRELLA_REQUIRES
+TTS08_REQUIRES = TTS2_REQUIRES = ASR_REQUIRES = UMBRELLA_REQUIRES
 OVERLAY = ["kitten_inference/tts08/_deps.py", "kitten_inference/tts08/get_model.py",
            "kitten_inference/tts08/cpp_model.py", "kitten_inference/tts08/_espeak_path.py"]
 TESTED = {  # the tested build's overlay files (the release commit has new ones, and _deps.py)
@@ -53,6 +53,7 @@ SOURCE = {
     "src/kitten_inference/tts2_tiny/frontend/NOTICE": b"Kitten TTS 2 mini/nano/pico front end notice (stand-in)\n",
     "engines/tts2/licenses/Apache-2.0.txt": b"Apache 2.0 (stand-in)\n",
     "engines/tts2/licenses/rocm/HIP.txt": b"HIP (stand-in)\n",
+    "engines/asr/NOTICE": b"ASR notices (stand-in)\n",
     "engines/tts2/src/post/atempo.cc": b"// atempo (LGPL) stand-in\n",
     "engines/tts2/src/engine.cc": b"// engine\n",
     "engines/tts2/include/kt2n/post/atempo.h": b"// atempo header\n",
@@ -68,6 +69,11 @@ SOURCE = {
     "src/kitten_inference/tts2/__init__.py": b'"""Kitten TTS 2."""\n',
     "src/kitten_inference/tts2/_abi.py": b"ABI_VERSION = 2\n",
     "src/kitten_inference/tts2/_cli.py": b"def main():\n    return 0\n",
+    "src/kitten_inference/asr/__init__.py": b'"""Kitten ASR."""\n',
+    "src/kitten_inference/asr/__main__.py": b"from ._cli import main\n",
+    "src/kitten_inference/asr/_cli.py": b"def main():\n    return 0\n",
+    "src/kitten_inference/asr/_engine.py": b"def decode():\n    return ''\n",
+    "engines/asr/python/backend.py": b"# the ASR build input (stand-in)\n",
     "engines/tts2/tools/kt2n_assets/__init__.py": b"",
     "engines/tts2/tools/kt2n_assets/prepare.py": b"# prepare\n",
     "engines/tts2/python/pyproject.toml": (b'[project]\nname = "kitten-inference-tts2"\nversion = "0.2.0"\ndependencies = '
@@ -166,6 +172,7 @@ class World:
             self.add(self.inputs, *self.payload(part, abi))
         self.add(self.pure, *self.umbrella(umbrella_version, umbrella_requires))
         self.add(self.pure, *self.tts2())
+        self.add(self.pure, *self.asr())
         self.relock()
 
     # ---------------------------------------------------------------- the source repository
@@ -294,7 +301,8 @@ class World:
             M(f"{info}/METADATA", meta.encode()),
             M(f"{info}/WHEEL", b"Wheel-Version: 1.0\nGenerator: hatchling 1.27.0\nRoot-Is-Purelib: true\n"
               b"Tag: py3-none-any\n"),
-            M(f"{info}/entry_points.txt", b"[console_scripts]\nkitten-tts = kitten_inference._cli:main\n"),
+            M(f"{info}/entry_points.txt", b"[console_scripts]\nkitten-tts = kitten_inference._cli:main\n"
+              b"kitten-asr = kitten_inference.asr._cli:main\n"),
             M(f"{info}/licenses/LICENSE", SOURCE["LICENSE"]),
         ]
         return f"kitten_inference-{version}-py3-none-any.whl", members, info
@@ -319,6 +327,39 @@ class World:
             M(f"{info}/entry_points.txt", b"[console_scripts]\nkitten-tts = kitten_inference._cli:main\n"),
         ]
         return f"kitten_inference_tts2-{VERSION}-py3-none-any.whl", members, info
+
+    def asr(self, version: str = VERSION, requires=None):
+        """The ASR wheel: the Python files of src/kitten_inference/asr and nothing else, built like the tts2 one."""
+        info = f"kitten_inference_asr-{version}.dist-info"
+        files = {"kitten_inference/asr/" + path[len("src/kitten_inference/asr/"):]: data
+                 for path, data in SOURCE.items() if path.startswith("src/kitten_inference/asr/")}
+        members = [M(p, d, date=(2020, 2, 2, 0, 0, 0)) for p, d in sorted(files.items())]
+        members += [
+            M(f"{info}/METADATA", ("Metadata-Version: 2.4\nName: kitten-inference-asr\nVersion: " + version + "\n"
+                                   "Requires-Python: >=3.8\n"
+                                   + "".join(f"Requires-Dist: {r}\n" for r in (ASR_REQUIRES if requires is None
+                                                                                else requires))).encode()),
+            M(f"{info}/WHEEL", b"Wheel-Version: 1.0\nRoot-Is-Purelib: true\nTag: py3-none-any\n"),
+            M(f"{info}/licenses/LICENSE", SOURCE["LICENSE"]),
+        ]
+        return f"kitten_inference_asr-{version}-py3-none-any.whl", members, info
+
+    def asr_cpu(self, plat: str = "manylinux_2_27_x86_64.manylinux_2_28_x86_64", version: str = VERSION, extra=()):
+        """A speech recognition CPU engine wheel (py3-none-<platform>): libraries and llama.cpp's licence only."""
+        info = f"kitten_inference_asr_cpu-{version}.dist-info"
+        ext = "dll" if plat.startswith("win_") else "dylib" if plat.startswith("macosx") else "so"
+        prefix = "" if ext == "dll" else "lib"
+        members = [M("kitten_inference/_asr_cpu/LICENSE-llama.cpp", b"MIT License\n"),
+                   M(f"kitten_inference/_asr_cpu/lib/{prefix}kasr.{ext}", b"kasr for " + plat.encode(), mode=0o755),
+                   M(f"kitten_inference/_asr_cpu/lib/{prefix}llama.{ext}", b"llama for " + plat.encode(), mode=0o755)]
+        members += list(extra)
+        members += [
+            M(f"{info}/METADATA", ("Metadata-Version: 2.4\nName: kitten-inference-asr-cpu\nVersion: " + version
+                                   + "\nRequires-Python: >=3.8\n").encode()),
+            M(f"{info}/WHEEL", ("Wheel-Version: 1.0\nRoot-Is-Purelib: false\n"
+                                + "".join(f"Tag: py3-none-{p}\n" for p in plat.split("."))).encode()),
+        ]
+        return f"kitten_inference_asr_cpu-{version}-py3-none-{plat}.whl", members, info
 
     # ---------------------------------------------------------------- artifacts and the lock
 
@@ -376,9 +417,10 @@ class World:
         aw.build(self.lock_path, self.inputs, self.pure, self.source, self.root / out, tag_run=tag_run)
         return self.root / out
 
-    def check(self, out: Path, elf=None):
-        """check_assembled on the wheels in out: (problems, the Check)."""
+    def check(self, out: Path, elf=None, asr_cpu=None):
+        """check_assembled on the wheels in out: (problems, the Check). asr_cpu: the folder with the CPU engine
+        wheels the assembly was given (None: none was given)."""
         _, ca, _ = scripts()
         check = ca.Check(self.lock(), self.inputs, self.source, expected_pairs=self.pairs(),
-                         elf=elf if elf is not None else (lambda path: None))
+                         elf=elf if elf is not None else (lambda path: None), asr_cpu=asr_cpu)
         return check.run(sorted(Path(out).glob("*.whl"))), check

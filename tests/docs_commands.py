@@ -15,7 +15,7 @@ from pathlib import Path
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument('--family', choices=['tts08', 'tts2', 'tts2_tiny'], required=True)
+    p.add_argument('--family', choices=['tts08', 'tts2', 'tts2_tiny', 'asr'], required=True)
     p.add_argument('--project', default='kitten-inference')
     p.add_argument('--version', required=True)
     p.add_argument('--out', type=Path, required=True)
@@ -26,8 +26,10 @@ def main():
     text = source.read_text(encoding='utf-8')
     install = re.search(r'## Install\n.*?```sh\n(.*?)\n```', text, re.S).group(1)
     use = re.search(r'## Use\n.*?```sh\n(.*?)\n```', text, re.S).group(1)
-    model = {'tts08': 'kitten-tts-nano-0.8', 'tts2': 'kitten-tts-2 ', 'tts2_tiny': 'kitten-tts-2-nano'}[args.family]
-    block = install + '\n' + next(line for line in use.splitlines() if model in line)
+    # the Use lines of this family; speech to text reads back the file Kitten TTS 0.8 writes
+    models = {'tts08': ('kitten-tts-nano-0.8',), 'tts2': ('kitten-tts-2 ',), 'tts2_tiny': ('kitten-tts-2-nano',),
+              'asr': ('kitten-tts-nano-0.8', 'kitten-asr')}[args.family]
+    block = '\n'.join([install] + [line for line in use.splitlines() if any(m in line for m in models)])
     # the documented requirement, with or without a minimum version (pip install kitten-inference)
     block = re.sub(r'pip install "?kitten-inference(?:>=[0-9.]+)?"?$', 'pip install "' + args.project + '==' + args.version + '"', block, flags=re.M)
     args.out.mkdir(parents=True, exist_ok=True)
