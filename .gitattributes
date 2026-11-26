@@ -1,0 +1,2 @@
+# spaCy's small English model, vendored unchanged from its official wheel: data, shown as binary in diffs.
+src/kitten_inference/tts2_tiny/frontend/en_core_web_sm/** -diff

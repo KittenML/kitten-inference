@@ -1,0 +1,29 @@
+kitten-inference
+Copyright 2026 KittenML
+
+KittenML's code in this repository is licensed under the Apache License,
+Version 2.0 (LICENSE). Each engine also contains third-party code under other
+licenses, so the repository as a whole is not Apache-2.0-only. Each engine's
+NOTICE lists that code, its licenses and which build or wheel contains it.
+The source-tree locations are:
+
+- engines/lite/NOTICE: Kitten TTS 0.8, with license texts in engines/lite/licenses/.
+- engines/tts2/NOTICE: Kitten TTS 2 (its Python API and the CUDA and ROCm engines),
+  with license texts in engines/tts2/licenses/ and the code's origin in
+  engines/tts2/PROVENANCE.md.
+- src/kitten_inference/tts2_tiny/frontend/NOTICE: the text front end of Kitten TTS 2
+  mini, nano and pico (from kittenml 0.9.8, Apache-2.0), with parts of misaki 0.9.4
+  (Apache-2.0), two MIT-licensed files that misaki adapted (cutlet and num2kana), a port
+  of mojimoji (Apache-2.0), num2words (LGPL-2.1-or-later, license text in
+  frontend/num2words/COPYING) and spaCy's small English model en_core_web_sm 3.8.0
+  (MIT, license text in frontend/en_core_web_sm/LICENSE). That NOTICE lists each part
+  and its changes. Every wheel carries it next to that code, as
+  kitten_inference/tts2_tiny/frontend/NOTICE.
+
+Assembled release wheels carry these notices and license texts under
+.dist-info/licenses/tts-0.8/, .dist-info/licenses/tts-2/ and
+.dist-info/licenses/tts-2-tiny/. Source-built wheels
+retain the engines/ directory names under .dist-info/licenses/.
+
+The weights of the Kitten TTS models are not in this repository; they are
+downloaded on first use and keep the licenses on their Hugging Face pages.
