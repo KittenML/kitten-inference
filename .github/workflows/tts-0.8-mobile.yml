@@ -1,0 +1,106 @@
+name: TTS 0.8 C library (phones)
+
+# Builds the C library for apps (engines/lite/engine/include/kitten_tts08.h) for Android and iOS, and checks on Linux
+# that it gives the same audio as the Python package. Nothing here is published or added to the wheels.
+on:
+  pull_request:
+    paths:
+      - "engines/lite/**"
+      - "src/kitten_inference/tts08/**"
+      - "src/kitten_inference/tts2_tiny/**"
+      - "tests/tts08/test_capi.py"
+      - "tests/tts2_tiny/**"
+      - ".github/workflows/tts-0.8-mobile.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    name: Android arm64 (NDK)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v5
+      - name: Build
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ninja-build
+          ANDROID_NDK="$ANDROID_NDK_LATEST_HOME" engines/lite/mobile/build_android.sh "$RUNNER_TEMP/android"
+      - name: Newer ARM instructions only in the per-level kernels
+        run: |
+          B="$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          python3 engines/lite/mobile/check_arm_isa.py "$B/llvm-objdump" "$B/llvm-nm" "$RUNNER_TEMP/android/build/libkitten_tts08.so"
+      - uses: actions/upload-artifact@v6
+        with:
+          name: kitten-tts08-android-arm64
+          path: |
+            ${{ runner.temp }}/android/lib
+            ${{ runner.temp }}/android/include
+          retention-days: 14
+
+  ios:
+    name: iOS arm64 (XCFramework)
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v5
+      - name: Build
+        run: engines/lite/mobile/build_ios.sh "$RUNNER_TEMP/ios"
+      - name: No OpenMP or Python symbols left undefined
+        run: |
+          # The iOS library carries its own OpenMP runtime subset (src/backend/cpu/omp_shim): the other objects in the
+          # archive call its __kmpc_* / omp_* functions, so only names that no object in the archive defines count.
+          L="$RUNNER_TEMP/ios/device/lib/libkitten_tts08.a"
+          missing=$(comm -23 <(nm -u "$L" | awk '{print $NF}' | grep -E "__kmpc_|omp_get|_Py" | sort -u) <(nm -U "$L" | awk 'NF==3{print $3}' | sort -u))
+          if [ -n "$missing" ]; then echo "undefined: $missing"; exit 1; fi
+      - uses: actions/upload-artifact@v6
+        with:
+          name: kitten-tts08-ios
+          path: ${{ runner.temp }}/ios/KittenTTS08.xcframework
+          retention-days: 14
+
+  parity:
+    name: Same audio as the Python package (Linux x86_64)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Package and C library with the same CMake settings
+        run: |
+          python -m pip install -q . pytest "huggingface-hub>=0.25,<2"
+          cmake -S engines/lite/engine -B build/capi -DCMAKE_BUILD_TYPE=Release -DKITTEN_BUILD_C_LIBRARY=ON \
+            -DBUILD_SHARED_LIBS=ON -DKITTEN_BUILD_PYTHON_MODULE=OFF -DENABLE_CUDA=OFF -DENABLE_NATIVE_ARCH=OFF \
+            -DKITTEN_C_LIBRARY_LTO=ON
+          cmake --build build/capi --parallel
+      - name: Test
+        run: |
+          D=$(python -c "from huggingface_hub import snapshot_download as s; print(s('KittenML/meownn-models', revision='5e9bca0cc3a4e2a617f604b1333d5f34536c1eed', allow_patterns=['kitten_fp32_15m.bin', 'voices_kitten_15m/*']))")
+          cd tests && KITTEN_TTS08_CAPI_LIB=../build/capi/libkitten_tts08.so KITTEN_TTS08_CAPI_MODEL_DIR="$D" \
+            KITTEN_TTS08_CAPI_SAME_BUILD=1 python -m pytest -q tts08/test_capi.py
+      - name: Kitten TTS 2 pico and nano through the package and the C library
+        run: |
+          for m in pico:da8c9d029e16d9302f1827adb303d92316e25f73 nano:54526b8d8e45333cd720d3a082c106aacf416064; do
+            R=$(python -c "import sys; from huggingface_hub import snapshot_download as s; print(s('KittenML/kitten-tts-2-' + sys.argv[1], revision=sys.argv[2]))" "${m%%:*}" "${m#*:}")
+            (cd tests && KITTEN_TTS08_CAPI_LIB=../build/capi/libkitten_tts08.so KITTEN_TTS2_TINY_REPO="$R" \
+              KITTEN_TTS08_CAPI_SAME_BUILD=1 python -m pytest -q tts2_tiny)
+          done
+      - name: Text front ends of the C library and the stream chunks, with the data files an app downloads
+        run: |
+          sh engines/lite/mobile/fetch_phonemizer_data.sh "$RUNNER_TEMP/ph"
+          python -m kitten_inference.tts2_tiny.frontend.export_phone_data "$RUNNER_TEMP/fe"
+          dl() { python -c "import sys; from huggingface_hub import snapshot_download as s; print(s('KittenML/' + sys.argv[1], revision=sys.argv[2]))" "$1" "$2"; }
+          NANO=$(dl kitten-tts-2-nano 54526b8d8e45333cd720d3a082c106aacf416064)
+          MINI=$(dl kitten-tts-2-mini c01797caec3967b400da457656e011eb81f530a4)
+          # from the repository root: inside tests/, tests/packaging would hide the packaging library spaCy imports
+          export KITTEN_TTS08_CAPI_LIB="$PWD/build/capi/libkitten_tts08.so" KITTEN_ESPEAK_DATA="$RUNNER_TEMP/ph" \
+            KITTEN_TTS08_PHONEMIZER_DATA="$RUNNER_TEMP/ph" KITTEN_TINY_FE_DATA="$RUNNER_TEMP/fe" \
+            KITTEN_TTS2_MINI_REPO="$MINI" KITTEN_TTS08_STREAM_MODEL=KittenML/kitten-tts-nano-0.8
+          KITTEN_TTS2_TINY_REPO="$NANO" python -m pytest -q -rs tests/tts2_tiny/test_tiny_lang_frontend.py \
+            tests/tts2_tiny/test_frontend_capi_en.py tests/tts08/test_capi_text.py tests/test_stream_chunks.py
+          KITTEN_TTS2_TINY_REPO="$MINI" python -m pytest -q -rs tests/tts2_tiny/test_tiny_lang_tr.py \
+            tests/tts2_tiny/test_tiny_ja_frontend.py

@@ -1,0 +1,6 @@
+# Internal release input; public metadata is defined at the repository root.
+# Pure Python (src/kitten_inference/asr), so no compiler packages are needed to build it.
+[build-system]
+requires = ["hatchling==1.27.0", "tomli; python_version < '3.11'", "tomli-w>=1,<2"]
+build-backend = "backend"
+backend-path = ["."]

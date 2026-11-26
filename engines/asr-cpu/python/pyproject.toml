@@ -1,0 +1,8 @@
+# Internal release input; public metadata is defined at the repository root.
+# The speech recognition CPU engine (libkasr and llama.cpp's libraries) as one wheel per platform, py3-none-<platform>:
+# the libraries are loaded with ctypes, so one build serves every Python version. The wheels of kitten-inference are
+# assembled from it (.github/scripts/assemble_wheels.py); it is never uploaded.
+[build-system]
+requires = ["scikit-build-core==1.1.1", "tomli; python_version < '3.11'", "tomli-w>=1,<2"]
+build-backend = "backend"
+backend-path = ["."]
